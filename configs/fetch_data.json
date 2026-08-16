@@ -1,0 +1,11 @@
+{
+  "tickers": [
+    "SPY", "QQQ", "IWM", "EFA", "EEM", "VGK", "EWJ",
+    "IEF", "TLT", "SHY", "TIP", "LQD", "HYG", "BND",
+    "GLD", "SLV", "DBC", "USO", "UNG", "DBA",
+    "UUP", "FXE", "FXB", "FXY", "FXA", "FXC"
+  ],
+  "start": "2007-04-18",
+  "end": "2026-01-01",
+  "out": "data/raw.parquet"
+}
