@@ -31,6 +31,13 @@ class MeanVariancePortfolio(BasePortfolio):
     every other portfolio here follows. Its gross is reserved via
     ``existing_gross`` so new opens only size into what's actually left of
     the budget.
+
+    ``drift_band`` is the no-trade region around each ticker's target
+    weight, same mechanism as ``ScoreProportionalPortfolio``: solving the QP
+    fresh every bar with no dampening means day-to-day noise in scores/Sigma
+    gets traded on constantly, which is exactly what an empirical run
+    showed (turnover ~758x/yr even with costs off) -- this is the lever
+    against it.
     """
 
     def __init__(
@@ -40,10 +47,12 @@ class MeanVariancePortfolio(BasePortfolio):
         max_gross: float = 1.0,
         risk_aversion: float = 1.0,
         min_periods: int = 60,
+        drift_band: float = 0.0,
     ) -> None:
         super().__init__(price_source=price_source, initial_cash=initial_cash, max_gross=max_gross)
         self._risk_aversion = risk_aversion
         self._min_periods = min_periods
+        self._drift_band = drift_band
         self._returns: dict[Ticker, list[float]] = {}
         self._last_price: dict[Ticker, float] = {}
 
@@ -111,6 +120,9 @@ class MeanVariancePortfolio(BasePortfolio):
                 continue
             position = self._positions.get(ticker)
             current_qty = position.quantity if position else 0
+            current_weight = current_qty * price / equity
+            if abs(weight - current_weight) < self._drift_band:
+                continue
 
             delta = round(weight * equity / price) - current_qty
             if delta == 0:

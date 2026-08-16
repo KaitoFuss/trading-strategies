@@ -18,6 +18,8 @@ class NetworkMomentumConfig:
     risk_aversion: float = 1.0
     min_periods: int = 60
     """Minimum days of return history a ticker needs before Sigma will use it."""
+    drift_band: float = 0.0
+    """No-trade region around each ticker's target weight; see MeanVariancePortfolio."""
     cost_bps: float = 0.0
     commission_bps: float = 0.0
     output_dir: str = "output"

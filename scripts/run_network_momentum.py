@@ -52,6 +52,7 @@ def main() -> None:
             max_gross=config.max_gross,
             risk_aversion=config.risk_aversion,
             min_periods=config.min_periods,
+            drift_band=config.drift_band,
         ),
         lambda portfolio: None,
         backtest_config,
