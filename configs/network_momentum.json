@@ -1,0 +1,12 @@
+{
+  "name": "Network Momentum",
+  "data": "data/raw.parquet",
+  "initial_cash": 1000000.0,
+  "max_gross": 2.0,
+  "risk_aversion": 2.0,
+  "min_periods": 60,
+  "cost_bps": 1.0,
+  "commission_bps": 0.5,
+  "output_dir": "output",
+  "risk_free_rate": 0.02
+}
