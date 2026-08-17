@@ -16,8 +16,12 @@ class NetworkMomentumConfig:
     initial_cash: float = 100_000.0
     max_gross: float = 1.0
     risk_aversion: float = 1.0
+    halflife: float = 126.0
+    """Halflife (in bars) of the factor-return EWMA that forms mu_f; see
+    NetworkMomentumStrategy. Constant learning rate so mu_f can reprice a
+    factor after a regime shift instead of freezing like a full-sample mean."""
     min_periods: int = 60
-    """Minimum days of return history a ticker needs before Sigma will use it."""
+    """Minimum days of price history a ticker needs before the portfolio sizes it."""
     drift_band: float = 0.0
     """No-trade region around each ticker's target weight; see MeanVariancePortfolio."""
     cost_bps: float = 0.0

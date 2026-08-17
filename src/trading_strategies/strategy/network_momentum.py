@@ -1,7 +1,37 @@
 import numpy as np
 from backtester.core.events import MarketEvent, SignalEvent, Ticker
 
+from trading_strategies.factor_risk import FactorRiskModel
 from trading_strategies.features.online_momentum import OnlineTickerFeatures
+
+
+class _FactorReturnEwma:
+    """Exponentially-weighted mean of the factor-return vector, constant
+    learning rate set by ``halflife`` (in bars): alpha = 1 - 0.5**(1/halflife),
+    seeded by the first observation.
+
+    Replaces a full-sample expanding mean of ``_factor_return_history``. That
+    mean has a ~1/n learning rate — it freezes within a few years and cannot
+    reprice a factor after a regime shift (the 2009 momentum crash being the
+    textbook case): a run of one sign early in the sample keeps dragging the
+    estimate for years. A halflife-weighted mean keeps a constant, tunable
+    learning rate and holds only O(1) state, matching this strategy's
+    incremental design rather than a growing history list.
+    """
+
+    def __init__(self, halflife: float) -> None:
+        self._alpha = 1.0 - 0.5 ** (1.0 / halflife)
+        self._value: np.ndarray | None = None
+
+    def update(self, x: np.ndarray) -> np.ndarray:
+        self._value = (
+            x if self._value is None else self._alpha * x + (1 - self._alpha) * self._value
+        )
+        return self._value
+
+    @property
+    def value(self) -> np.ndarray | None:
+        return self._value
 
 
 def _cross_sectional_zscore(raw: dict[Ticker, list[float]]) -> dict[Ticker, list[float]]:
@@ -38,11 +68,14 @@ def _factor_portfolio_returns(
 class NetworkMomentumStrategy:
     """Grinold-Kahn factor model, incremental: this bar's B (8 standardized
     momentum loadings per ticker) dotted with mu_f becomes each ticker's
-    score. mu_f is the expanding-average realized return of each factor's
-    own long-short mimicking portfolio (weighted by yesterday's standardized
-    loading) — no regression: simpler than a daily cross-sectional OLS, at
-    the cost of not separating the 8 factors' overlapping effects on
-    returns the way a multivariate fit would.
+    score. mu_f is the halflife-weighted average realized return of each
+    factor's own long-short mimicking portfolio (weighted by yesterday's
+    standardized loading) — no regression: simpler than a daily
+    cross-sectional OLS, at the cost of not separating the 8 factors'
+    overlapping effects on returns the way a multivariate fit would. The
+    weighting is exponential (``halflife`` in bars) rather than a full-sample
+    mean so mu_f can reprice a factor after a regime shift instead of
+    freezing at a ~1/n learning rate — see ``_FactorReturnEwma``.
 
     Runs entirely on O(1)/O(window) state built bar by bar from
     ``event.bars`` — no precomputed history, no unbounded per-ticker state.
@@ -61,11 +94,12 @@ class NetworkMomentumStrategy:
     every other strategy here.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, halflife: float = 126.0, risk_model: FactorRiskModel | None = None) -> None:
         self._online_features: dict[Ticker, OnlineTickerFeatures] = {}
         self._last_price: dict[Ticker, float] = {}
         self._last_loadings: dict[Ticker, list[float]] | None = None
-        self._factor_return_history: list[np.ndarray] = []
+        self._factor_return_ewma = _FactorReturnEwma(halflife=halflife)
+        self._risk_model = risk_model
 
     def process_market(self, event: MarketEvent) -> SignalEvent:
         raw_loadings: dict[Ticker, list[float]] = {}
@@ -83,19 +117,31 @@ class NetworkMomentumStrategy:
 
         standardized = _cross_sectional_zscore(raw_loadings)
 
+        factor_returns: np.ndarray | None = None
         if self._last_loadings is not None:
             factor_returns = _factor_portfolio_returns(self._last_loadings, returns)
             if factor_returns is not None:
-                self._factor_return_history.append(factor_returns)
+                self._factor_return_ewma.update(factor_returns)
+
+        if self._risk_model is not None:
+            # Fold this bar into the shared risk model before the portfolio
+            # reads it (backtester runs process_market -> process_signal in
+            # order), so today's Sigma reflects today's B and factor return.
+            self._risk_model.update(
+                loadings=standardized,
+                prev_loadings=self._last_loadings,
+                factor_returns=factor_returns,
+                returns=returns,
+            )
 
         scores = self._score(standardized)
         self._last_loadings = standardized
         return SignalEvent(timestamp=event.timestamp, scores=scores)
 
     def _score(self, standardized: dict[Ticker, list[float]]) -> dict[Ticker, float]:
-        if not self._factor_return_history:
+        mu_f = self._factor_return_ewma.value
+        if mu_f is None:
             return {}
-        mu_f = np.mean(self._factor_return_history, axis=0)
         return {
             ticker: float(np.array(loadings) @ mu_f) for ticker, loadings in standardized.items()
         }

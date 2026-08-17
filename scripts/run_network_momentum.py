@@ -18,6 +18,7 @@ from backtester.tracker.metrics import monthly_returns_table, strategy_correlati
 from backtester.tracker.report import save_report
 
 from trading_strategies.config import NetworkMomentumConfig
+from trading_strategies.factor_risk import FactorRiskModel
 from trading_strategies.portfolio.mean_variance import MeanVariancePortfolio
 from trading_strategies.strategy.network_momentum import NetworkMomentumStrategy
 
@@ -44,8 +45,9 @@ def main() -> None:
     backtest_config = config.to_backtest_config()
 
     logger.info("Running network-momentum backtest on %s …", config.data)
+    risk_model = FactorRiskModel(halflife=config.halflife)
     strategy_tracker = run_backtest(
-        NetworkMomentumStrategy(),
+        NetworkMomentumStrategy(halflife=config.halflife, risk_model=risk_model),
         lambda price_source: MeanVariancePortfolio(
             price_source=price_source,
             initial_cash=config.initial_cash,
@@ -53,6 +55,7 @@ def main() -> None:
             risk_aversion=config.risk_aversion,
             min_periods=config.min_periods,
             drift_band=config.drift_band,
+            risk_model=risk_model,
         ),
         lambda portfolio: None,
         backtest_config,
