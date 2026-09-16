@@ -1,4 +1,5 @@
 import math
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -58,7 +59,7 @@ def _batch_macd(close: pd.Series, short: int, long: int, apply_phi: bool) -> pd.
     q = macd / close.rolling(63, min_periods=63).std()
     normalized = q / q.rolling(252, min_periods=252).std()
     if apply_phi:
-        return normalized * np.exp(-(normalized**2) / 4) / 0.89
+        return cast(pd.Series, normalized * np.exp(-(normalized**2) / 4) / 0.89)
     return normalized
 
 
