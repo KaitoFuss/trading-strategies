@@ -47,3 +47,47 @@ class EwmMean:
         if self._count < self._min_periods:
             return None
         return self._numer / self._denom
+
+
+class EwmMoments:
+    """Matches ``Series.ewm(...).mean()`` and ``Series.ewm(...).std()``
+    together (they share the same decaying accumulators). ``.std`` uses
+    pandas' bias-corrected weighted-variance formula (``bias=False``, the
+    default): ``var = (Sw*Sxx - Sx^2) / (Sw^2 - Sw2)`` where ``Sx = sum(w*x)``,
+    ``Sxx = sum(w*x^2)``, ``Sw = sum(w)``, ``Sw2 = sum(w^2)``, all decayed by
+    ``(1-alpha)`` each step."""
+
+    def __init__(
+        self, *, span: int | None = None, halflife: float | None = None, min_periods: int
+    ) -> None:
+        self._alpha = _resolve_alpha(span, halflife)
+        self._min_periods = min_periods
+        self._sx = 0.0
+        self._sxx = 0.0
+        self._sw = 0.0
+        self._sw2 = 0.0
+        self._count = 0
+
+    def update(self, value: float) -> None:
+        a = self._alpha
+        self._sx = value + (1 - a) * self._sx
+        self._sxx = value * value + (1 - a) * self._sxx
+        self._sw = 1 + (1 - a) * self._sw
+        self._sw2 = 1 + (1 - a) ** 2 * self._sw2
+        self._count += 1
+
+    @property
+    def mean(self) -> float | None:
+        if self._count < self._min_periods:
+            return None
+        return self._sx / self._sw
+
+    @property
+    def std(self) -> float | None:
+        if self._count < self._min_periods or self._count < 2:
+            return None
+        denom = self._sw**2 - self._sw2
+        if denom <= 0:
+            return None
+        variance = (self._sw * self._sxx - self._sx**2) / denom
+        return math.sqrt(variance) if variance > 0 else 0.0
