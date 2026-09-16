@@ -38,6 +38,7 @@ dev = [
     "pre-commit>=4.6.0",
     "pandas-stubs>=3.0.3.260530",
     "ipykernel>=7.3.0",
+    "nbconvert>=7.17.1",
 ]
 
 [tool.ruff]
