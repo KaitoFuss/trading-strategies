@@ -27,41 +27,31 @@ def _resolve_alpha(span: int | None, halflife: float | None) -> float:
     return _alpha_from_span(span) if span is not None else _alpha_from_halflife(halflife)  # type: ignore[arg-type]
 
 
-class EwmMean:
-    """Matches ``Series.ewm(span=..., min_periods=...).mean()`` (pandas'
-    default ``adjust=True``), one value at a time."""
-
-    def __init__(
-        self, *, span: int | None = None, halflife: float | None = None, min_periods: int
-    ) -> None:
-        self._alpha = _resolve_alpha(span, halflife)
-        self._min_periods = min_periods
-        self._numer = 0.0
-        self._denom = 0.0
-        self._count = 0
-
-    def update(self, value: float) -> float | None:
-        a = self._alpha
-        self._numer = value + (1 - a) * self._numer
-        self._denom = 1 + (1 - a) * self._denom
-        self._count += 1
-        if self._count < self._min_periods:
-            return None
-        return self._numer / self._denom
-
-
 class EwmMoments:
     """Matches ``Series.ewm(...).mean()`` and ``Series.ewm(...).std()``
     together (they share the same decaying accumulators). ``.std`` uses
     pandas' bias-corrected weighted-variance formula (``bias=False``, the
     default): ``var = (Sw*Sxx - Sx^2) / (Sw^2 - Sw2)`` where ``Sx = sum(w*x)``,
     ``Sxx = sum(w*x^2)``, ``Sw = sum(w)``, ``Sw2 = sum(w^2)``, all decayed by
-    ``(1-alpha)`` each step."""
+    ``(1-alpha)`` each step.
+
+    ``min_periods`` is required with ``span``. With ``halflife`` it may be
+    omitted, defaulting to ``math.ceil(halflife)`` -- ``ceil`` rather than
+    ``int()`` truncation so a fractional halflife doesn't warm up slightly
+    early."""
 
     def __init__(
-        self, *, span: int | None = None, halflife: float | None = None, min_periods: int
+        self,
+        *,
+        span: int | None = None,
+        halflife: float | None = None,
+        min_periods: int | None = None,
     ) -> None:
         self._alpha = _resolve_alpha(span, halflife)
+        if min_periods is None:
+            if halflife is None:
+                raise ValueError("min_periods is required unless halflife is given")
+            min_periods = math.ceil(halflife)
         self._min_periods = min_periods
         self._sx = 0.0
         self._sxx = 0.0
@@ -94,6 +84,24 @@ class EwmMoments:
         return math.sqrt(variance) if variance > 0 else 0.0
 
 
+class EwmMean:
+    """Matches ``Series.ewm(span=..., min_periods=...).mean()`` (pandas'
+    default ``adjust=True``), one value at a time.
+
+    A thin wrapper around ``EwmMoments`` -- the recursion math lives in one
+    place -- that returns ``.mean`` directly from ``update`` for callers that
+    only need the mean and want it inline, not via a separate property read."""
+
+    def __init__(
+        self, *, span: int | None = None, halflife: float | None = None, min_periods: int
+    ) -> None:
+        self._moments = EwmMoments(span=span, halflife=halflife, min_periods=min_periods)
+
+    def update(self, value: float) -> float | None:
+        self._moments.update(value)
+        return self._moments.mean
+
+
 class RollingStd:
     """Matches ``Series.rolling(window, min_periods=window).std()``: a
     genuine fixed window, not an EMA -- needs the actual last ``window``
@@ -103,12 +111,12 @@ class RollingStd:
     O(window) recompute is cheap."""
 
     def __init__(self, window: int) -> None:
-        self._window = window
+        self._max_len = window
         self._buffer: deque[float] = deque(maxlen=window)
 
     def update(self, value: float) -> float | None:
         self._buffer.append(value)
-        if len(self._buffer) < self._window:
+        if len(self._buffer) < self._max_len:
             return None
         n = len(self._buffer)
         mean = math.fsum(self._buffer) / n
@@ -121,11 +129,12 @@ class RollingLag:
     values have been seen -- what a plain ``Series.diff(lookback)`` needs."""
 
     def __init__(self, lookback: int) -> None:
-        self._buffer: deque[float] = deque(maxlen=lookback + 1)
+        # +1: the window holds `lookback` bars of history plus the current bar itself.
+        self._max_len = lookback + 1
+        self._buffer: deque[float] = deque(maxlen=self._max_len)
 
     def update(self, value: float) -> float | None:
         self._buffer.append(value)
-        assert self._buffer.maxlen is not None
-        if len(self._buffer) < self._buffer.maxlen:
+        if len(self._buffer) < self._max_len:
             return None
         return self._buffer[0]

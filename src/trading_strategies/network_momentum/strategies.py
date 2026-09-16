@@ -28,14 +28,14 @@ class MacdBenchmarkStrategy:
     def process_market(self, event: MarketEvent) -> SignalEvent:
         scores: dict[Ticker, float] = {}
         for ticker, bar in event.bars.items():
-            states = self._macd.setdefault(
+            macd_features = self._macd.setdefault(
                 ticker,
                 tuple(
                     StreamingMacd(short, long, apply_phi=True, winsorize=False)
                     for short, long in MACD_PAIRS
                 ),
             )
-            values = [state.update(bar.close) for state in states]
+            values = [macd_feature.update(bar.close) for macd_feature in macd_features]
             if all(value is not None for value in values):
                 scores[ticker] = sum(values) / len(values)  # type: ignore[arg-type]
             else:

@@ -16,6 +16,11 @@ from trading_strategies.utils.features import (
     StreamingVolScaledMomentum,
     response_function,
 )
+from trading_strategies.utils.streaming import EwmMoments
+
+
+def _winsor_source() -> EwmMoments:
+    return EwmMoments(halflife=WINSOR_HALFLIFE)
 
 
 def test_response_function_matches_baz_formula() -> None:
@@ -32,7 +37,7 @@ def test_response_function_bounded_near_one() -> None:
 def test_winsorizer_passes_value_through_during_warmup() -> None:
     from trading_strategies.utils.features import _Winsorizer
 
-    winsorizer = _Winsorizer()
+    winsorizer = _Winsorizer(_winsor_source())
     # WINSOR_HALFLIFE=31 min_periods -- well before that, clip is a no-op,
     # matching Series.clip(lower=NaN, upper=NaN) leaving the value unchanged.
     assert winsorizer.apply(1000.0) == 1000.0
@@ -50,7 +55,7 @@ def test_winsorizer_matches_pandas_clip_bit_for_bit() -> None:
     std = series.ewm(halflife=WINSOR_HALFLIFE, min_periods=WINSOR_HALFLIFE).std()
     expected = series.clip(lower=mean - WINSOR_Z * std, upper=mean + WINSOR_Z * std)
 
-    winsorizer = _Winsorizer()
+    winsorizer = _Winsorizer(_winsor_source())
     actual = [winsorizer.apply(v) for v in values]
 
     for a, e in zip(actual, expected, strict=True):
