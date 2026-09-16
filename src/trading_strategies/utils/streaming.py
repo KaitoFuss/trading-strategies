@@ -10,7 +10,6 @@ pandas math, restated as an O(1) or bounded-memory recursion.
 from __future__ import annotations
 
 import math
-from collections import deque
 
 
 def _alpha_from_span(span: int) -> float:
