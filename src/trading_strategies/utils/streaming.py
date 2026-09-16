@@ -10,6 +10,7 @@ pandas math, restated as an O(1) or bounded-memory recursion.
 from __future__ import annotations
 
 import math
+from collections import deque
 
 
 def _alpha_from_span(span: int) -> float:
@@ -91,3 +92,41 @@ class EwmMoments:
             return None
         variance = (self._sw * self._sxx - self._sx**2) / denom
         return math.sqrt(variance) if variance > 0 else 0.0
+
+
+class RollingStd:
+    """Matches ``Series.rolling(window, min_periods=window).std()``: a
+    genuine fixed window, not an EMA -- needs the actual last ``window``
+    values, not just decaying scalars. Recomputes two-pass with ``math.fsum``
+    each step (matching ``backtester.stats.mean_and_stdev``'s numerical-
+    accuracy convention) rather than an incremental sum-of-squares; the
+    window is at most a few hundred floats, so the O(window) recompute is
+    cheap."""
+
+    def __init__(self, window: int) -> None:
+        self._window = window
+        self._buffer: deque[float] = deque(maxlen=window)
+
+    def update(self, value: float) -> float | None:
+        self._buffer.append(value)
+        if len(self._buffer) < self._window:
+            return None
+        n = len(self._buffer)
+        mean = math.fsum(self._buffer) / n
+        variance = math.fsum((v - mean) ** 2 for v in self._buffer) / (n - 1)
+        return math.sqrt(variance)
+
+
+class RollingLag:
+    """The value ``lookback`` steps back, or ``None`` until ``lookback + 1``
+    values have been seen -- what a plain ``Series.diff(lookback)`` needs."""
+
+    def __init__(self, lookback: int) -> None:
+        self._buffer: deque[float] = deque(maxlen=lookback + 1)
+
+    def update(self, value: float) -> float | None:
+        self._buffer.append(value)
+        assert self._buffer.maxlen is not None
+        if len(self._buffer) < self._buffer.maxlen:
+            return None
+        return self._buffer[0]

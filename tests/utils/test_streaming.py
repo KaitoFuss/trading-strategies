@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from trading_strategies.utils.streaming import EwmMean, EwmMoments
+from trading_strategies.utils.streaming import EwmMean, EwmMoments, RollingLag, RollingStd
 
 
 def test_ewm_mean_matches_pandas_span() -> None:
@@ -94,3 +94,24 @@ def test_ewm_moments_zero_for_constant_input() -> None:
     for _ in range(20):
         ewm.update(1.0)
     assert ewm.std == pytest.approx(0.0, abs=1e-12)
+
+
+def test_rolling_std_matches_pandas_rolling_std() -> None:
+    rng = np.random.default_rng(4)
+    values = rng.normal(0, 1, 30)
+    window = 6
+    expected = pd.Series(values).rolling(window, min_periods=window).std()
+
+    roller = RollingStd(window)
+    actual = [roller.update(v) for v in values]
+
+    for a, e in zip(actual, expected, strict=True):
+        assert (a is None) == np.isnan(e)
+        if a is not None:
+            assert a == pytest.approx(e)
+
+
+def test_rolling_lag_returns_value_from_lookback_steps_ago() -> None:
+    lag = RollingLag(lookback=3)
+    results = [lag.update(v) for v in [10.0, 20.0, 30.0, 40.0, 50.0]]
+    assert results == [None, None, None, 10.0, 20.0]
