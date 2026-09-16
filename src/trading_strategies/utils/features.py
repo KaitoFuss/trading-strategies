@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import math
 
-from trading_strategies.utils.streaming import EwmMean, EwmMoments, RollingStd
+from trading_strategies.utils.streaming import EwmMean, EwmMoments, RollingLag, RollingStd
 
 MOMENTUM_LOOKBACKS: tuple[int, ...] = (1, 21, 63, 126, 252)
 MACD_PAIRS: tuple[tuple[int, int], ...] = ((8, 24), (16, 48), (32, 96))
@@ -75,4 +75,31 @@ class StreamingMacd:
 
         normalized = q / macd_std
         value = response_function(normalized) if self._apply_phi else normalized
+        return self._winsorizer.apply(value) if self._winsorizer is not None else value
+
+
+class StreamingVolScaledMomentum:
+    """Cumulative log return over ``lookback`` days, scaled by EWM vol and
+    sqrt(lookback), one price at a time."""
+
+    def __init__(self, lookback: int, apply_phi: bool = False, winsorize: bool = True) -> None:
+        self._lookback = lookback
+        self._apply_phi = apply_phi
+        self._vol = EwmMoments(span=VOL_SPAN, min_periods=VOL_SPAN)
+        self._lag = RollingLag(lookback)
+        self._winsorizer = _Winsorizer() if winsorize else None
+        self._last_close: float | None = None
+
+    def update(self, close: float) -> float | None:
+        if self._last_close is not None:
+            self._vol.update(math.log(close / self._last_close))
+        self._last_close = close
+
+        lag_close = self._lag.update(close)
+        vol = self._vol.std
+        if lag_close is None or not vol:
+            return None
+
+        raw = math.log(close / lag_close) / (vol * math.sqrt(self._lookback))
+        value = response_function(raw) if self._apply_phi else raw
         return self._winsorizer.apply(value) if self._winsorizer is not None else value

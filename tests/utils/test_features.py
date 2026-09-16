@@ -6,9 +6,11 @@ import pandas as pd
 import pytest
 
 from trading_strategies.utils.features import (
+    VOL_SPAN,
     WINSOR_HALFLIFE,
     WINSOR_Z,
     StreamingMacd,
+    StreamingVolScaledMomentum,
     response_function,
 )
 
@@ -99,3 +101,45 @@ def test_streaming_macd_wires_winsorizer_based_on_flag() -> None:
 
     assert unwinsorized._winsorizer is None
     assert isinstance(winsorized._winsorizer, _Winsorizer)
+
+
+def _batch_vol_scaled_momentum(close: pd.Series, lookback: int) -> pd.Series:
+    returns = np.log(close).diff()
+    vol = returns.ewm(span=VOL_SPAN, min_periods=VOL_SPAN).std()
+    raw_return = np.log(close).diff(lookback)
+    return cast(pd.Series, raw_return / (vol * np.sqrt(lookback)))
+
+
+def test_streaming_momentum_matches_batch_formula_unwinsorized() -> None:
+    rng = np.random.default_rng(9)
+    n = 400
+    returns = rng.normal(0.0005, 0.01, n)
+    close = pd.Series((1 + returns).cumprod() * 100.0)
+    expected = _batch_vol_scaled_momentum(close, lookback=21)
+
+    momentum = StreamingVolScaledMomentum(lookback=21, winsorize=False)
+    actual = [momentum.update(c) for c in close]
+
+    for a, e in zip(actual, expected, strict=True):
+        assert (a is None) == np.isnan(e)
+        if a is not None:
+            assert a == pytest.approx(e, abs=1e-6)
+
+
+def test_streaming_momentum_sign_matches_return_direction() -> None:
+    rng = np.random.default_rng(10)
+    n = 300
+    returns = rng.normal(0.001, 0.01, n)
+    close = (1 + returns).cumprod() * 100.0
+    momentum = StreamingVolScaledMomentum(lookback=21, winsorize=False)
+
+    values = [momentum.update(c) for c in close]
+    lookback = 21
+    for i in range(lookback, n):
+        val = values[i]
+        if val is None:
+            continue
+        realized = close[i] / close[i - lookback] - 1
+        if realized == 0:
+            continue
+        assert (val > 0) == (realized > 0)
