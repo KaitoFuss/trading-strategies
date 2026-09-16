@@ -15,7 +15,7 @@ import pandas as pd
 MOMENTUM_LOOKBACKS: tuple[int, ...] = (1, 21, 63, 126, 252)
 MACD_PAIRS: tuple[tuple[int, int], ...] = ((8, 24), (16, 48), (32, 96))
 VOL_SPAN = 60
-WINSOR_HALFLIFE = 252
+WINSOR_HALFLIFE = 31
 WINSOR_Z = 5.0
 
 
@@ -43,7 +43,7 @@ def vol_scaled_momentum(
     return response_function(scaled) if apply_phi else scaled
 
 
-def macd_indicator(close: pd.Series, short: int, long: int, apply_phi: bool = True) -> pd.Series:
+def macd_indicator(close: pd.Series, short: int, long: int, apply_phi: bool = False) -> pd.Series:
     """Normalized MACD signal (Baz et al. 2015)."""
     macd = (
         close.ewm(span=short, min_periods=short).mean()
@@ -62,7 +62,7 @@ def winsorize(series: pd.Series, halflife: int = WINSOR_HALFLIFE, z: float = WIN
 
 
 def compute_all_features(
-    close: pd.Series, momentum_phi: bool = False, macd_phi: bool = True
+    close: pd.Series, momentum_phi: bool = False, macd_phi: bool = False
 ) -> pd.DataFrame:
     """The 8 momentum/MACD features for one ticker, winsorized, as named columns.
 

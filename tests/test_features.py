@@ -86,14 +86,25 @@ def test_macd_indicator_positive_for_sustained_uptrend() -> None:
     assert feature.iloc[-1] > 0
 
 
-def test_macd_indicator_bounded_by_response_function() -> None:
+def test_macd_indicator_bounded_by_response_function_when_phi_applied() -> None:
+    n = 400
+    rng = np.random.default_rng(3)
+    close = pd.Series(100 + np.cumsum(rng.normal(0, 1, n)), index=_dates(n))
+    feature = macd_indicator(close, short=8, long=24, apply_phi=True)
+    valid = feature.dropna()
+    # exp(-x^2/4) response function caps the transform near +/- 1/sqrt(2e)/0.89
+    assert (valid.abs() <= 1.1).all()
+
+
+def test_macd_indicator_unbounded_by_default() -> None:
+    # apply_phi now defaults to False -- the raw normalized z-score can
+    # exceed the response function's ~0.964 ceiling.
     n = 400
     rng = np.random.default_rng(3)
     close = pd.Series(100 + np.cumsum(rng.normal(0, 1, n)), index=_dates(n))
     feature = macd_indicator(close, short=8, long=24)
     valid = feature.dropna()
-    # exp(-x^2/4) response function caps the transform near +/- 1/sqrt(2e)/0.89
-    assert (valid.abs() <= 1.1).all()
+    assert valid.abs().max() > 1.1
 
 
 def test_winsorize_clips_a_single_extreme_outlier() -> None:
@@ -104,8 +115,8 @@ def test_winsorize_clips_a_single_extreme_outlier() -> None:
     clipped = winsorize(series)
     assert clipped.iloc[-1] < 1000.0
     assert clipped.iloc[-1] == pytest.approx(
-        series.ewm(halflife=252, min_periods=252).mean().iloc[-1]
-        + 5.0 * series.ewm(halflife=252, min_periods=252).std().iloc[-1]
+        series.ewm(halflife=31, min_periods=31).mean().iloc[-1]
+        + 5.0 * series.ewm(halflife=31, min_periods=31).std().iloc[-1]
     )
 
 
