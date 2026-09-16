@@ -98,10 +98,9 @@ class RollingStd:
     """Matches ``Series.rolling(window, min_periods=window).std()``: a
     genuine fixed window, not an EMA -- needs the actual last ``window``
     values, not just decaying scalars. Recomputes two-pass with ``math.fsum``
-    each step (matching ``backtester.stats.mean_and_stdev``'s numerical-
-    accuracy convention) rather than an incremental sum-of-squares; the
-    window is at most a few hundred floats, so the O(window) recompute is
-    cheap."""
+    each step for numerical accuracy, rather than an incremental
+    sum-of-squares; the window is at most a few hundred floats, so the
+    O(window) recompute is cheap."""
 
     def __init__(self, window: int) -> None:
         self._window = window

@@ -35,8 +35,33 @@ class TargetVolPortfolio(BasePortfolio):
     Gross is deliberately uncapped: the paper applies no cross-sectional
     renormalization to fit a leverage budget, unlike every other
     ``Portfolio`` in this codebase. ``max_gross`` is accepted for
-    constructor-signature consistency with ``factory.py`` but is not used
-    to scale anything.
+    constructor-signature consistency with ``BasePortfolio`` and the other
+    portfolio implementations but is not used to scale anything.
+
+    Warm-up is compounded, not additive: this Portfolio only sees a ticker
+    once its ``Strategy`` starts scoring it (e.g. ``MacdBenchmarkStrategy``
+    needs ~347 bars for all 3 MACD pairs to warm), and only from that point
+    does this Portfolio's own ``EwmMoments(span=60, min_periods=60)`` start
+    counting toward its own ~60-bar warm-up -- so the first trade lands
+    around bar ~410, not ~350. This is a consequence of the deliberate
+    Strategy/Portfolio decoupling, not a bug.
+
+    A held position that stops being scored, loses its price, or hits a
+    zero vol estimate is dropped from the weight dict in
+    ``_target_weights``/``_orders_from_targets`` and is therefore left
+    completely untouched -- never rebalanced or exited -- until end-of-run
+    liquidation. This mirrors ``ScoreProportionalPortfolio``'s documented
+    behavior.
+
+    Known risk: ``_update_vol`` reads prices via ``PriceSource.get_price``,
+    which returns a sticky last price for a ticker missing from a bar
+    (e.g. a holiday misalignment or a data gap). That injects a spurious
+    zero return into the vol EWM, biasing ``sigma_i`` downward -- and
+    because this Portfolio's gross is uncapped with no ``max_gross``
+    renormalization backstop (unlike ``InverseVolPortfolio``), a
+    downward-biased ``sigma_i`` directly inflates leverage with no safety
+    net. Low probability, but worth knowing before feeding this real data
+    with gaps.
     """
 
     def __init__(

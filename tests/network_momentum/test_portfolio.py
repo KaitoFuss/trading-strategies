@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import pytest
+from backtester.core.engine import Portfolio
 from backtester.core.events import SignalEvent
 from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
 
@@ -19,6 +20,11 @@ class _FakePriceSource:
 
     def get_price(self, ticker: str) -> float | None:
         return self._prices.get(ticker)
+
+
+# Type-check-only: pins that `TargetVolPortfolio` actually conforms to the
+# `Portfolio` protocol under `mypy --strict`. Never used at runtime.
+_portfolio_conforms: Portfolio = TargetVolPortfolio(price_source=_FakePriceSource())
 
 
 def _signal(timestamp: datetime, scores: dict[str, float]) -> SignalEvent:

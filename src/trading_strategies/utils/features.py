@@ -32,7 +32,10 @@ class _Winsorizer:
     this adds no warmup delay of its own."""
 
     def __init__(self, halflife: float = WINSOR_HALFLIFE, z: float = WINSOR_Z) -> None:
-        self._ewm = EwmMoments(halflife=halflife, min_periods=int(halflife))
+        # int() truncates rather than rounds up; harmless today since
+        # WINSOR_HALFLIFE is already an integer, but a future non-integer
+        # halflife would warm up very slightly early. math.ceil avoids that.
+        self._ewm = EwmMoments(halflife=halflife, min_periods=math.ceil(halflife))
         self._z = z
 
     def apply(self, value: float) -> float:

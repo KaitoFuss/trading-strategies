@@ -2,10 +2,15 @@ from datetime import datetime, timedelta
 
 import numpy as np
 import pytest
+from backtester.core.engine import Strategy
 from backtester.core.events import Bar, MarketEvent
 
 from trading_strategies.network_momentum.strategies import MacdBenchmarkStrategy
 from trading_strategies.utils.features import MACD_PAIRS, StreamingMacd
+
+# Type-check-only: pins that `MacdBenchmarkStrategy` actually conforms to the
+# `Strategy` protocol under `mypy --strict`. Never used at runtime.
+_strategy_conforms: Strategy = MacdBenchmarkStrategy()
 
 
 def _market_events(closes: dict[str, list[float]]) -> list[MarketEvent]:
