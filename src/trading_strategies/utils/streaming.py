@@ -93,7 +93,11 @@ class EwmMean:
     only need the mean and want it inline, not via a separate property read."""
 
     def __init__(
-        self, *, span: int | None = None, halflife: float | None = None, min_periods: int
+        self,
+        *,
+        span: int | None = None,
+        halflife: float | None = None,
+        min_periods: int | None = None,
     ) -> None:
         self._moments = EwmMoments(span=span, halflife=halflife, min_periods=min_periods)
 
