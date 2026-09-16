@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from trading_strategies.utils.features import WINSOR_HALFLIFE, WINSOR_Z, response_function
+from trading_strategies.utils.features import (
+    WINSOR_HALFLIFE,
+    WINSOR_Z,
+    StreamingMacd,
+    response_function,
+)
 
 
 def test_response_function_matches_baz_formula() -> None:
@@ -44,3 +49,65 @@ def test_winsorizer_matches_pandas_clip_bit_for_bit() -> None:
 
     for a, e in zip(actual, expected, strict=True):
         assert a == pytest.approx(e)
+
+
+def _batch_macd(close: pd.Series, short: int, long: int, apply_phi: bool) -> pd.Series:
+    macd = close.ewm(span=short, min_periods=short).mean() - close.ewm(
+        span=long, min_periods=long
+    ).mean()
+    q = macd / close.rolling(63, min_periods=63).std()
+    normalized = q / q.rolling(252, min_periods=252).std()
+    if apply_phi:
+        return normalized * np.exp(-(normalized**2) / 4) / 0.89
+    return normalized
+
+
+def test_streaming_macd_matches_batch_formula_unwinsorized() -> None:
+    rng = np.random.default_rng(6)
+    n = 400
+    close = pd.Series(100 + np.cumsum(rng.normal(0, 1, n)))
+    expected = _batch_macd(close, short=8, long=24, apply_phi=True)
+
+    macd = StreamingMacd(short=8, long=24, apply_phi=True, winsorize=False)
+    actual = [macd.update(c) for c in close]
+
+    for a, e in zip(actual, expected, strict=True):
+        assert (a is None) == np.isnan(e)
+        if a is not None:
+            assert a == pytest.approx(e, abs=1e-6)
+
+
+def test_streaming_macd_positive_for_sustained_uptrend() -> None:
+    rng = np.random.default_rng(7)
+    n = 400
+    trend = np.linspace(100, 200, n)
+    noise = rng.normal(0, 0.5, n)
+    macd = StreamingMacd(short=8, long=24)
+    last = None
+    for v in trend + noise:
+        last = macd.update(v)
+    assert last is not None
+    assert last > 0
+
+
+def test_streaming_macd_winsorizes_by_default() -> None:
+    # A single extreme one-day price jump partway through an otherwise calm
+    # random walk -- winsorize=True should clip the resulting outlier
+    # reading, winsorize=False should pass it through unchanged, so the two
+    # must diverge at (or shortly after) the jump.
+    rng = np.random.default_rng(8)
+    n = 500
+    close = 100 + np.cumsum(rng.normal(0, 1, n))
+    close[400] += 500.0  # one huge one-day jump
+
+    unwinsorized = StreamingMacd(short=8, long=24, winsorize=False)
+    winsorized = StreamingMacd(short=8, long=24, winsorize=True)
+
+    raw_values = [unwinsorized.update(c) for c in close]
+    clipped_values = [winsorized.update(c) for c in close]
+
+    diverged = any(
+        raw is not None and clipped is not None and raw != pytest.approx(clipped)
+        for raw, clipped in zip(raw_values, clipped_values, strict=True)
+    )
+    assert diverged
