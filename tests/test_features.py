@@ -18,12 +18,12 @@ def _dates(n: int) -> pd.DatetimeIndex:
     return pd.date_range("2020-01-01", periods=n, freq="D")
 
 
-def test_daily_returns_matches_pct_change_by_hand() -> None:
+def test_daily_returns_matches_log_ratio_by_hand() -> None:
     close = pd.Series([100.0, 110.0, 99.0], index=_dates(3))
     result = daily_returns(close)
     assert result.iloc[0] != result.iloc[0]  # NaN first observation
-    assert result.iloc[1] == pytest.approx(0.10)
-    assert result.iloc[2] == pytest.approx(-0.10)
+    assert result.iloc[1] == pytest.approx(np.log(1.10))
+    assert result.iloc[2] == pytest.approx(np.log(99.0 / 110.0))
 
 
 def test_ewm_vol_is_zero_for_constant_returns() -> None:
@@ -104,8 +104,8 @@ def test_winsorize_clips_a_single_extreme_outlier() -> None:
     clipped = winsorize(series)
     assert clipped.iloc[-1] < 1000.0
     assert clipped.iloc[-1] == pytest.approx(
-        series.ewm(span=252, min_periods=252).mean().iloc[-1]
-        + 5.0 * series.ewm(span=252, min_periods=252).std().iloc[-1]
+        series.ewm(halflife=252, min_periods=252).mean().iloc[-1]
+        + 5.0 * series.ewm(halflife=252, min_periods=252).std().iloc[-1]
     )
 
 
