@@ -16,7 +16,7 @@ scheduling, not streaming features) and gets its own design.
 
 ## Why streaming, not batch
 
-`features.py` (soon: `network_momentum/features.py`) currently takes a full
+`features.py` (soon: `utils/features.py`) currently takes a full
 `pd.Series` of close prices and returns the whole feature history in one
 call — fine for offline exploration, wrong shape for a `Strategy`, which
 receives one `MarketEvent` (one bar, all tickers) at a time and must return
@@ -57,28 +57,30 @@ src/trading_strategies/
   utils/
     __init__.py
     streaming.py        # EwmMean, EwmMoments, RollingStd, RollingLag
+    features.py          # StreamingVolScaledMomentum, StreamingMacd, StreamingFeatureSet
   network_momentum/
     __init__.py
-    features.py          # StreamingVolScaledMomentum, StreamingMacd, StreamingFeatureSet
     strategies.py         # MacdBenchmarkStrategy
     portfolio.py           # TargetVolPortfolio
 tests/
   utils/
     __init__.py
     test_streaming.py
+    test_features.py
   network_momentum/
     __init__.py
-    test_features.py
     test_strategies.py
     test_portfolio.py
 ```
 
 `src/trading_strategies/features.py` and `tests/test_features.py` are
-deleted; their content moves into `network_momentum/features.py` /
-`tests/network_momentum/test_features.py` in streaming form.
-`utils/streaming.py` is deliberately outside `network_momentum/` — the four
-primitives are generic (not paper-specific) and are exactly the kind of
-thing a future strategy would want to reuse.
+deleted; their content moves into `utils/features.py` /
+`tests/utils/test_features.py` in streaming form. Both `streaming.py` and
+`features.py` live in `utils/`, not `network_momentum/` — the 8 momentum/
+MACD features are shared machinery every benchmark in this replication
+(MACD now, Long Only/LinReg/GMOM later) will read from, not something
+specific to the MACD strategy itself; `network_momentum/` holds only the
+paper-specific `Strategy`/`Portfolio` implementations that consume them.
 
 ## A. `utils/streaming.py`
 
@@ -117,7 +119,7 @@ Each primitive is a plain class with mutable internal state, no
 inheritance/Protocol needed — they're used compositionally, not swapped
 polymorphically.
 
-## B. `network_momentum/features.py`
+## B. `utils/features.py`
 
 Per-ticker composed classes, each exposing `update(...) -> float | None`
 (or a dict, for the aggregate):
@@ -220,7 +222,7 @@ weight_i,t = (1 / N_t) · score_i,t · (σ_tgt / σ_i,t)
   batch call, fed one value at a time over a random series, asserting
   elementwise match (including where pandas emits `NaN` for warm-up,
   `EwmMean`/`EwmMoments`/`RollingStd`/`RollingLag` return `None`).
-- `tests/network_momentum/test_features.py`: `StreamingMacd` and
+- `tests/utils/test_features.py`: `StreamingMacd` and
   `StreamingVolScaledMomentum` against hand-built pandas expressions for
   the same formula (not the old `compute_all_features` — it's gone), plus
   the existing property-style assertions ported over (e.g. "positive for a
