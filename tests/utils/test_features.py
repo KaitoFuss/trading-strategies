@@ -6,9 +6,12 @@ import pandas as pd
 import pytest
 
 from trading_strategies.utils.features import (
+    MACD_PAIRS,
+    MOMENTUM_LOOKBACKS,
     VOL_SPAN,
     WINSOR_HALFLIFE,
     WINSOR_Z,
+    StreamingFeatureSet,
     StreamingMacd,
     StreamingVolScaledMomentum,
     response_function,
@@ -143,3 +146,24 @@ def test_streaming_momentum_sign_matches_return_direction() -> None:
         if realized == 0:
             continue
         assert (val > 0) == (realized > 0)
+
+
+def test_streaming_feature_set_has_expected_columns_once_warm() -> None:
+    rng = np.random.default_rng(11)
+    n = 600
+    close = 100 + np.cumsum(rng.normal(0, 1, n))
+    feature_set = StreamingFeatureSet()
+
+    last_row: dict[str, float] = {}
+    for c in close:
+        last_row = feature_set.update(c)
+
+    expected_columns = {f"mom_{lb}" for lb in MOMENTUM_LOOKBACKS} | {
+        f"macd_{short}_{long}" for short, long in MACD_PAIRS
+    }
+    assert set(last_row) == expected_columns
+
+
+def test_streaming_feature_set_returns_empty_dict_before_any_feature_is_warm() -> None:
+    feature_set = StreamingFeatureSet()
+    assert feature_set.update(100.0) == {}

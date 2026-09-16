@@ -103,3 +103,34 @@ class StreamingVolScaledMomentum:
         raw = math.log(close / lag_close) / (vol * math.sqrt(self._lookback))
         value = response_function(raw) if self._apply_phi else raw
         return self._winsorizer.apply(value) if self._winsorizer is not None else value
+
+
+class StreamingFeatureSet:
+    """All 8 momentum/MACD features for one ticker, one price at a time.
+    ``momentum_phi``/``macd_phi`` toggle the Baz et al. response-function
+    squashing for each feature family, independently, matching today's
+    ``compute_all_features`` toggles."""
+
+    def __init__(self, momentum_phi: bool = False, macd_phi: bool = False) -> None:
+        momentum: dict[int, StreamingVolScaledMomentum] = {}
+        for lookback in MOMENTUM_LOOKBACKS:
+            momentum[lookback] = StreamingVolScaledMomentum(lookback, apply_phi=momentum_phi)
+        self._momentum = momentum
+
+        macd: dict[tuple[int, int], StreamingMacd] = {}
+        for short, long in MACD_PAIRS:
+            macd[(short, long)] = StreamingMacd(short, long, apply_phi=macd_phi)
+        self._macd = macd
+
+    def update(self, close: float) -> dict[str, float]:
+        values: dict[str, float] = {}
+        for lookback, mom_feature in self._momentum.items():
+            value = mom_feature.update(close)
+            if value is not None:
+                values[f"mom_{lookback}"] = value
+        for key, macd_feature in self._macd.items():
+            short, long = key
+            value = macd_feature.update(close)
+            if value is not None:
+                values[f"macd_{short}_{long}"] = value
+        return values
