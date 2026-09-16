@@ -37,8 +37,7 @@ def test_macd_benchmark_strategy_matches_mean_of_three_macd_pairs() -> None:
 
     strategy = MacdBenchmarkStrategy()
     reference = [
-        StreamingMacd(short, long, apply_phi=True, winsorize=False)
-        for short, long in MACD_PAIRS
+        StreamingMacd(short, long, apply_phi=True, winsorize=False) for short, long in MACD_PAIRS
     ]
 
     last_score = None

@@ -58,9 +58,10 @@ def test_winsorizer_matches_pandas_clip_bit_for_bit() -> None:
 
 
 def _batch_macd(close: pd.Series, short: int, long: int, apply_phi: bool) -> pd.Series:
-    macd = close.ewm(span=short, min_periods=short).mean() - close.ewm(
-        span=long, min_periods=long
-    ).mean()
+    macd = (
+        close.ewm(span=short, min_periods=short).mean()
+        - close.ewm(span=long, min_periods=long).mean()
+    )
     q = macd / close.rolling(63, min_periods=63).std()
     normalized = q / q.rolling(252, min_periods=252).std()
     if apply_phi:

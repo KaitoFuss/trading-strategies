@@ -121,9 +121,7 @@ def test_target_vol_portfolio_excludes_unwarmed_ticker_from_n_t() -> None:
     prices.set_price("SPY", price)
     prices.set_price("QQQ", 50.0)
     equity_before = portfolio.mark_to_market()
-    orders = portfolio.process_signal(
-        _signal(start + timedelta(days=65), {"SPY": 0.5, "QQQ": 0.3})
-    )
+    orders = portfolio.process_signal(_signal(start + timedelta(days=65), {"SPY": 0.5, "QQQ": 0.3}))
 
     # QQQ has no vol history yet, so it produces no order at all.
     assert len(orders) == 1

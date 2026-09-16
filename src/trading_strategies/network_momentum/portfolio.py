@@ -95,8 +95,7 @@ class TargetVolPortfolio(BasePortfolio):
         if n == 0:
             return {}
         return {
-            ticker: (score / n) * (self._target_vol / vol)
-            for ticker, (score, vol) in ready.items()
+            ticker: (score / n) * (self._target_vol / vol) for ticker, (score, vol) in ready.items()
         }
 
     def _orders_from_targets(
