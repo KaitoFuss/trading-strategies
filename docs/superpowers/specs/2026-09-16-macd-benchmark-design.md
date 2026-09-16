@@ -143,7 +143,13 @@ Per-ticker composed classes, each exposing `update(...) -> float | None`
   `EwmMoments(halflife=31)` over its own output history (matching today's
   `WINSOR_HALFLIFE = 31` constant, unchanged), clipping to `±5` EWM stdevs
   around the EWM mean — same as today's `winsorize`, just applied inline
-  per-value instead of as a separate pass over a full series.
+  per-value instead of as a separate pass over a full series. Verified
+  against pandas: `Series.clip(lower=NaN, upper=NaN)` passes the value
+  through **unchanged**, it does not produce `NaN`. So winsorizing adds no
+  extra warmup delay of its own — a feature's `update()` returns `None`
+  only while its *own* core computation (the EMA/rolling-window warmup) is
+  undefined; once that produces a real number, winsorizing either clips it
+  (once its 31-period EWM is ready) or passes it through raw (before that).
 
 - **`StreamingFeatureSet`** — bundles 5 `StreamingVolScaledMomentum` +
   3 `StreamingMacd` per ticker. `update(close) -> dict[str, float] | None`,
