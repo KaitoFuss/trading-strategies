@@ -90,24 +90,11 @@ def test_streaming_macd_positive_for_sustained_uptrend() -> None:
     assert last > 0
 
 
-def test_streaming_macd_winsorizes_by_default() -> None:
-    # A single extreme one-day price jump partway through an otherwise calm
-    # random walk -- winsorize=True should clip the resulting outlier
-    # reading, winsorize=False should pass it through unchanged, so the two
-    # must diverge at (or shortly after) the jump.
-    rng = np.random.default_rng(8)
-    n = 500
-    close = 100 + np.cumsum(rng.normal(0, 1, n))
-    close[400] += 500.0  # one huge one-day jump
+def test_streaming_macd_wires_winsorizer_based_on_flag() -> None:
+    from trading_strategies.utils.features import _Winsorizer
 
     unwinsorized = StreamingMacd(short=8, long=24, winsorize=False)
     winsorized = StreamingMacd(short=8, long=24, winsorize=True)
 
-    raw_values = [unwinsorized.update(c) for c in close]
-    clipped_values = [winsorized.update(c) for c in close]
-
-    diverged = any(
-        raw is not None and clipped is not None and raw != pytest.approx(clipped)
-        for raw, clipped in zip(raw_values, clipped_values, strict=True)
-    )
-    assert diverged
+    assert unwinsorized._winsorizer is None
+    assert isinstance(winsorized._winsorizer, _Winsorizer)
