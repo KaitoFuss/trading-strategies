@@ -24,6 +24,7 @@ class MacdBacktestConfig:
     data: str
     tickers: list[str]
     target_vol: float = 0.15
+    rescale_to_portfolio_vol: bool = False
     initial_cash: float = 100_000.0
     max_gross: float = 1.0
     cost_bps: float = 0.0

@@ -16,7 +16,10 @@ from backtester.strategy.buy_and_hold import BuyAndHoldStrategy
 from backtester.tracker.metrics import PerformanceTracker
 
 from trading_strategies.config import MacdBacktestConfig
-from trading_strategies.network_momentum.portfolio import TargetVolPortfolio
+from trading_strategies.network_momentum.portfolio import (
+    RescaledTargetVolPortfolio,
+    TargetVolPortfolio,
+)
 from trading_strategies.network_momentum.strategies import MacdBenchmarkStrategy
 
 
@@ -28,12 +31,21 @@ def run_macd_benchmark(config: MacdBacktestConfig) -> dict[str, PerformanceTrack
     regardless of ``config.max_gross``, matching
     ``backtester.runner.run_strategy_and_benchmark``'s treatment of its
     buy-and-hold leg as a passive reference, not a thing under test.
+
+    ``config.rescale_to_portfolio_vol`` switches the strategy leg's
+    portfolio from the paper-faithful ``TargetVolPortfolio`` (per-asset Eq.
+    9 sizing only) to ``RescaledTargetVolPortfolio`` (the same sizing, plus
+    a final rescale so the book's *own* realized vol tracks
+    ``target_vol``).
     """
     backtest_config = config.to_backtest_config()
+    portfolio_cls = (
+        RescaledTargetVolPortfolio if config.rescale_to_portfolio_vol else TargetVolPortfolio
+    )
 
     strategy_tracker = run_backtest(
         MacdBenchmarkStrategy(),
-        lambda price_source: TargetVolPortfolio(
+        lambda price_source: portfolio_cls(
             price_source=price_source,
             initial_cash=config.initial_cash,
             target_vol=config.target_vol,

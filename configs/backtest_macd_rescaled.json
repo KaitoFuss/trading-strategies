@@ -1,5 +1,5 @@
 {
-    "name": "MACD Benchmark",
+    "name": "MACD Benchmark (Vol Rescaled)",
     "data": "data/raw.parquet",
     "tickers": [
         "SPY", "QQQ", "IWM", "EFA", "EEM", "VGK", "EWJ", "XLF", "XLE", "XLV", "XLY", "XLP", "XLI",
@@ -9,6 +9,7 @@
         "UNG", "DBA", "UUP", "FXE", "FXB", "FXY", "FXA", "FXC", "FXF"
     ],
     "target_vol": 0.15,
+    "rescale_to_portfolio_vol": true,
     "initial_cash": 1000000.0,
     "max_gross": 1.0,
     "cost_bps": 0.0,

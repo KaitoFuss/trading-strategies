@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -9,6 +10,7 @@ import pandas as pd
 import pytest
 
 from trading_strategies.config import MacdBacktestConfig
+from trading_strategies.network_momentum.portfolio import RescaledTargetVolPortfolio
 from trading_strategies.network_momentum.runner import run_macd_benchmark
 
 _TICKERS = ("SPY", "QQQ", "TLT")
@@ -54,6 +56,29 @@ def test_run_macd_benchmark_returns_both_legs(config: MacdBacktestConfig) -> Non
         assert len(tracker.mark_to_market_history) == _NUM_BARS
         metrics = tracker.metrics()
         assert not math.isnan(metrics.total_return)
+
+
+def test_run_macd_benchmark_uses_rescaled_portfolio_when_configured(
+    config: MacdBacktestConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``rescale_to_portfolio_vol=True`` must route through
+    ``RescaledTargetVolPortfolio`` instead of the plain ``TargetVolPortfolio``
+    -- checked by spying on the constructor, since the two portfolios'
+    trades are otherwise hard to tell apart from the outside on a short
+    synthetic run."""
+    seen: list[type] = []
+    original_init = RescaledTargetVolPortfolio.__init__
+
+    def _spy_init(self: RescaledTargetVolPortfolio, *args: object, **kwargs: object) -> None:
+        seen.append(type(self))
+        original_init(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(RescaledTargetVolPortfolio, "__init__", _spy_init)
+
+    rescaled_config = replace(config, rescale_to_portfolio_vol=True)
+    run_macd_benchmark(rescaled_config)
+
+    assert seen == [RescaledTargetVolPortfolio]
 
 
 def test_run_macd_benchmark_both_legs_actually_trade(config: MacdBacktestConfig) -> None:

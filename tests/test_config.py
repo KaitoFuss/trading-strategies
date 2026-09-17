@@ -71,6 +71,21 @@ def test_from_json_loads_shipped_config() -> None:
     assert config.target_vol == 0.15
     assert config.cost_bps == 0.0
     assert config.commission_bps == 0.0
+    assert config.rescale_to_portfolio_vol is False
+
+
+def test_from_json_loads_shipped_rescaled_config() -> None:
+    config_path = Path(__file__).parent.parent / "configs" / "backtest_macd_rescaled.json"
+    config = MacdBacktestConfig.from_json(config_path)
+
+    assert len(config.tickers) == 61
+    assert config.target_vol == 0.15
+    assert config.rescale_to_portfolio_vol is True
+
+
+def test_rescale_to_portfolio_vol_defaults_to_false() -> None:
+    config = MacdBacktestConfig(name="MACD Benchmark", data="data/raw.parquet", tickers=["SPY"])
+    assert config.rescale_to_portfolio_vol is False
 
 
 def test_from_json_raises_value_error_on_invalid_config(tmp_path: Path) -> None:
