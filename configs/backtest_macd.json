@@ -1,0 +1,18 @@
+{
+    "name": "MACD Benchmark",
+    "data": "data/raw.parquet",
+    "tickers": [
+        "SPY", "QQQ", "IWM", "EFA", "EEM", "VGK", "EWJ", "XLF", "XLE", "XLV", "XLY", "XLP", "XLI",
+        "XLB", "XLU", "SMH", "IBB", "KRE", "XHB", "GDX", "OIH", "IYT", "IYR", "EWC", "EWA", "EWU",
+        "EWL", "EWP", "EWI", "EWS", "EWZ", "FXI", "EWY", "EWT", "EWH", "EWW", "EZA", "EWM", "IEF",
+        "TLT", "SHY", "TIP", "LQD", "HYG", "BND", "MBB", "IGIB", "PFF", "GLD", "SLV", "DBC", "USO",
+        "UNG", "DBA", "UUP", "FXE", "FXB", "FXY", "FXA", "FXC", "FXF"
+    ],
+    "target_vol": 0.15,
+    "initial_cash": 1000000.0,
+    "max_gross": 1.0,
+    "cost_bps": 0.0,
+    "commission_bps": 0.0,
+    "risk_free_rate": 0.0,
+    "output_dir": "output"
+}

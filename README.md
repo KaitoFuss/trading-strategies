@@ -58,6 +58,14 @@ uv run scripts/fetch_data.py configs/fetch_data.json
 Pulls universe above into one tidy Parquet file, `data/raw.parquet`. Uses
 `backtester`'s `fetch_to_parquet` directly, no reimplementation.
 
+Runs the MACD benchmark strategy (Poh, Wood, Roberts & Zohren 2023) against
+a buy-and-hold reference over the ETF universe, and writes a PDF performance
+report to `output/`:
+
+```bash
+uv run scripts/run_backtest.py configs/backtest_macd.json
+```
+
 ## Project structure
 
 ```

@@ -153,3 +153,73 @@ class TargetVolPortfolio(BasePortfolio):
                 )
             )
         return orders
+
+
+class RescaledTargetVolPortfolio(TargetVolPortfolio):
+    """``TargetVolPortfolio`` with one extra step: the per-asset Eq. 9
+    weights are rescaled by ``target_vol / portfolio_vol``, where
+    ``portfolio_vol`` is this portfolio's own trailing annualized vol (an
+    ``EwmMoments(span=60, min_periods=60)`` on its realized daily equity
+    returns). Unlike the base class, ``target_vol`` here is a genuine
+    portfolio-level target: Eq. 9 alone only guarantees that the *sum* of
+    each asset's own vol contribution equals ``target_vol``, which is far
+    above the realized portfolio vol once diversification/correlation
+    across many assets is accounted for -- this rescale corrects for that.
+
+    Warm-up sample gating: a bar where this portfolio holds no position
+    (``self._positions`` empty) produces a mechanically zero equity
+    return -- nothing was held for a price move to act on, not a genuine
+    zero-vol observation. Such bars are excluded from the ``portfolio_vol``
+    EWM entirely, rather than counted as evidence of near-zero vol; without
+    this, the EWM would warm up during the strategy's own pre-trade
+    warm-up (all flat, all zero-return) and the first live rescale would
+    divide by a near-zero vol, spiking leverage. Until ``portfolio_vol`` is
+    warm, weights pass through unscaled -- identical to the base class --
+    which in practice means the first ~60 bars after this portfolio's first
+    real position match ``TargetVolPortfolio`` exactly.
+
+    Known feedback property, not a bug: once warm, the rescale is driven by
+    the vol of this portfolio's own past *rescaled* returns, not an
+    independent signal. This is the standard, pro-cyclical dynamic of every
+    realized-vol-targeting overlay (a calm stretch understates vol, sizing
+    up leverage right before a regime shift) -- documented here so it
+    isn't mistaken for an oversight.
+    """
+
+    def __init__(
+        self,
+        price_source: PriceSource,
+        initial_cash: float = 100_000.0,
+        target_vol: float = 0.15,
+        max_gross: float = 1.0,
+    ) -> None:
+        super().__init__(
+            price_source=price_source,
+            initial_cash=initial_cash,
+            target_vol=target_vol,
+            max_gross=max_gross,
+        )
+        self._portfolio_vol = EwmMoments(span=_VOL_SPAN, min_periods=_VOL_SPAN)
+        self._last_equity: float | None = None
+
+    def _annualized_portfolio_vol(self) -> float | None:
+        if not self._portfolio_vol.std:
+            return None
+        return self._portfolio_vol.std * math.sqrt(TRADING_DAYS_PER_YEAR)
+
+    def process_signal(self, event: SignalEvent) -> Sequence[OrderEvent]:
+        self._update_vol(set(event.scores) | set(self._positions), event.timestamp)
+        equity = self.mark_to_market()
+        if equity <= 0:
+            return []
+
+        if self._positions and self._last_equity is not None:
+            self._portfolio_vol.update(math.log(equity / self._last_equity))
+        self._last_equity = equity
+
+        weights = self._target_weights(event)
+        portfolio_vol = self._annualized_portfolio_vol()
+        if portfolio_vol:
+            scale = self._target_vol / portfolio_vol
+            weights = {ticker: weight * scale for ticker, weight in weights.items()}
+        return self._orders_from_targets(weights, equity, event.timestamp)

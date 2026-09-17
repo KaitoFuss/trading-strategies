@@ -23,7 +23,7 @@ Repository = "https://github.com/KaitoFuss/trading-strategies"
 Issues = "https://github.com/KaitoFuss/trading-strategies/issues"
 
 [tool.uv.sources]
-backtester = { git = "https://github.com/KaitoFuss/backtester", rev = "fb592fc87b4bb02a41d26356cc766136996aa883" }
+backtester = { git = "https://github.com/KaitoFuss/backtester", rev = "d82a774372e968b717b4707bdcc5f735ba86a1e7" }
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]
@@ -70,7 +70,7 @@ quote-style = "double"
 [tool.mypy]
 python_version = "3.12"
 strict = true
-files = ["src", "tests"]
+files = ["src", "tests", "scripts"]
 
 [[tool.mypy.overrides]]
 module = "tests.*"
