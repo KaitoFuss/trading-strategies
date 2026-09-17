@@ -38,7 +38,6 @@ def run_macd_benchmark(config: MacdBacktestConfig) -> dict[str, PerformanceTrack
     a final rescale so the book's *own* realized vol tracks
     ``target_vol``).
     """
-    backtest_config = config.to_backtest_config()
     portfolio_cls = (
         RescaledTargetVolPortfolio if config.rescale_to_portfolio_vol else TargetVolPortfolio
     )
@@ -52,7 +51,7 @@ def run_macd_benchmark(config: MacdBacktestConfig) -> dict[str, PerformanceTrack
             max_gross=config.max_gross,
         ),
         lambda portfolio: None,
-        backtest_config,
+        config,
     )
     benchmark_tracker = run_backtest(
         BuyAndHoldStrategy(),
@@ -60,6 +59,6 @@ def run_macd_benchmark(config: MacdBacktestConfig) -> dict[str, PerformanceTrack
             price_source=price_source, initial_cash=config.initial_cash
         ),
         lambda portfolio: None,
-        backtest_config,
+        config,
     )
     return {"MACD Benchmark": strategy_tracker, "Buy & Hold": benchmark_tracker}

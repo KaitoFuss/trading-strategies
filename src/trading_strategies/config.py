@@ -2,10 +2,10 @@
 
 ``backtester.config.BacktestConfig`` has no field for ``target_vol`` --
 it is specific to ``TargetVolPortfolio``, not to ``backtester``'s own
-portfolios -- so this repo carries its own config dataclass and adapts
-the shared subset of fields into a real ``BacktestConfig`` where
-``backtester`` requires that exact type (``run_backtest``,
-``report.save_report``).
+portfolios -- so this repo carries its own config dataclass. It satisfies
+``backtester.config.EngineConfig`` / ``backtester.tracker.report.ReportConfig``
+structurally, so it passes straight into ``run_backtest`` and
+``report.save_report`` with no adapter needed.
 """
 
 from __future__ import annotations
@@ -14,8 +14,6 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Self
-
-from backtester.config import BacktestConfig
 
 
 @dataclass(frozen=True)
@@ -38,16 +36,3 @@ class MacdBacktestConfig:
             return cls(**json.loads(path.read_text()))
         except (json.JSONDecodeError, TypeError) as error:
             raise ValueError(f"invalid config at {path}: {error}") from error
-
-    def to_backtest_config(self) -> BacktestConfig:
-        return BacktestConfig(
-            name=self.name,
-            data=self.data,
-            tickers=self.tickers,
-            initial_cash=self.initial_cash,
-            max_gross=self.max_gross,
-            cost_bps=self.cost_bps,
-            commission_bps=self.commission_bps,
-            risk_free_rate=self.risk_free_rate,
-            output_dir=self.output_dir,
-        )

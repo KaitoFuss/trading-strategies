@@ -107,7 +107,7 @@ wheels = [
 [[package]]
 name = "backtester"
 version = "1.0.0"
-source = { git = "https://github.com/KaitoFuss/backtester?rev=fb592fc87b4bb02a41d26356cc766136996aa883#fb592fc87b4bb02a41d26356cc766136996aa883" }
+source = { git = "https://github.com/KaitoFuss/backtester?rev=d82a774372e968b717b4707bdcc5f735ba86a1e7#d82a774372e968b717b4707bdcc5f735ba86a1e7" }
 dependencies = [
     { name = "matplotlib" },
     { name = "numpy" },
@@ -2263,7 +2263,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "backtester", git = "https://github.com/KaitoFuss/backtester?rev=fb592fc87b4bb02a41d26356cc766136996aa883" },
+    { name = "backtester", git = "https://github.com/KaitoFuss/backtester?rev=d82a774372e968b717b4707bdcc5f735ba86a1e7" },
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "numpy", specifier = ">=2.5.0" },
     { name = "pandas", specifier = ">=3.0.3" },

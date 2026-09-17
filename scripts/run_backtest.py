@@ -43,7 +43,7 @@ def main() -> None:
         trade_metrics,
         monthly_tables,
         correlation,
-        config=config.to_backtest_config(),
+        config=config,
     )
     logger.info("Done — wrote %s", report_path)
 
