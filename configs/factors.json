@@ -1,0 +1,22 @@
+{
+    "factors": [
+        {"name": "Equity", "level": 1, "group": "core", "weights": {"SPY": 0.6, "EFA": 0.3, "EEM": 0.1}},
+        {"name": "Rates", "level": 1, "group": "core", "weights": {"IEF": 1.0}},
+        {"name": "Credit", "level": 2, "group": "core", "weights": {"HYG": 0.5, "LQD": 0.5}},
+        {"name": "Commodities", "level": 2, "group": "core", "weights": {"DBC": 1.0}},
+        {"name": "Emerging Markets", "level": 3, "group": "secondary", "weights": {"EEM": 1.0}},
+        {"name": "Foreign Currency", "level": 3, "group": "secondary", "weights": {"UUP": -1.0}},
+        {"name": "Local Inflation", "level": 3, "group": "secondary", "weights": {"TIP": 1.0}},
+        {"name": "US vs Intl", "level": 3, "group": "secondary", "weights": {"SPY": 1.0, "EFA": -1.0}},
+        {"name": "Size", "level": 4, "group": "granular", "weights": {"IWM": 1.0, "SPY": -1.0}},
+        {"name": "Tech", "level": 4, "group": "granular", "weights": {"QQQ": 1.0, "SPY": -1.0}},
+        {"name": "Cyclical vs Defensive", "level": 4, "group": "granular", "weights": {
+            "XLI": 0.25, "XLB": 0.25, "XLY": 0.25, "XLF": 0.25,
+            "XLP": -0.3333333333, "XLU": -0.3333333333, "XLV": -0.3333333334}},
+        {"name": "Curve", "level": 4, "group": "granular", "weights": {"TLT": 1.0, "SHY": -1.0}},
+        {"name": "Energy", "level": 4, "group": "granular", "weights": {
+            "XLE": 0.3333333333, "OIH": 0.3333333333, "USO": 0.3333333334}},
+        {"name": "Precious Metals", "level": 4, "group": "granular", "weights": {"GLD": 1.0}},
+        {"name": "Yen", "level": 4, "group": "granular", "weights": {"FXY": 1.0}}
+    ]
+}
