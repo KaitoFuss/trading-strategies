@@ -107,7 +107,10 @@ One streaming estimator gives everything:
   B_macro = S W' F_macro⁻¹
   ```
 - **Combine:** `Σ = D_σ · C · D_σ`, where `C` is the factor-model correlation. Short-span
-  vols and long-span correlations are therefore separate.
+  vols and long-span correlations are therefore separate. The factor side also uses
+  short-span vols: `F` is scaled by `g gᵀ` and `B` divided by `g`, with `g_k` = short-span
+  / long-span vol of factor `k`. `Σ` does not change, but exposures stay in real units, the
+  units of the realized factor returns.
 - **Specific risk:** `D_i = max(floor · S_ii, S_ii − (B F Bᵀ)_ii)`. `residual_floor`
   defaults to `0.10`. Assets that define a factor (IEF, DBC, GLD…) would otherwise get
   about zero specific risk.

@@ -8,8 +8,12 @@ exposure is the standardized 12-1 month return, and the factor return is a
 cross-sectional regression of macro residual returns on it. Specific risk is
 floored at ``residual_floor * S_ii``. ``B`` and ``D`` are then rescaled by
 ``sigma_short / sqrt(S_ii)``, so short-span vols ride on long-span
-correlations. Everything is in daily units, and streaming/causal: the
-snapshot after ``update(bar t)`` uses data up to and including bar t only.
+correlations. The factor side carries its own short-span vol: ``F`` is scaled
+by ``g g^T`` and ``B`` divided by ``g`` (``g`` = short-span / long-span factor
+vol), which leaves ``Sigma`` unchanged but keeps exposures in real units, the
+units of the realized factor returns. Everything is in daily units, and
+streaming/causal: the snapshot after ``update(bar t)`` uses data up to and
+including bar t only.
 """
 
 from __future__ import annotations
@@ -30,7 +34,9 @@ from trading_strategies.utils.streaming import EwmMoments
 
 MOMENTUM = "Momentum"
 SPECIFIC = "Specific"
-_EIGEN_FLOOR = 1e-12
+_EIGEN_FLOOR_RELATIVE = 1e-8
+_EIGEN_FLOOR_ABSOLUTE = 1e-18
+_VARIANCE_EPS = 1e-18
 
 
 @dataclass(frozen=True)
@@ -113,6 +119,7 @@ class FactorRiskModel:
             self._tickers, lookback=config.momentum.lookback, skip=config.momentum.skip
         )
         self._momentum_var = EwmMoments(span=config.corr_span, min_periods=config.vol_span)
+        self._momentum_short_var = EwmMoments(span=config.vol_span, min_periods=config.vol_span)
         self._last_close: dict[Ticker, float] = {}
         self._snapshot = RiskModelSnapshot.empty()
 
@@ -121,7 +128,7 @@ class FactorRiskModel:
         return self._snapshot
 
     def update(self, closes: Mapping[Ticker, float]) -> None:
-        live = {t: c for t, c in closes.items() if t in self._known}
+        live = {t: c for t, c in closes.items() if t in self._known and math.isfinite(c) and c > 0}
         returns = {
             t: math.log(c / self._last_close[t]) for t, c in live.items() if t in self._last_close
         }
@@ -130,6 +137,7 @@ class FactorRiskModel:
         momentum_return = self._snapshot.momentum_return(returns)
         if momentum_return is not None:
             self._momentum_var.update(momentum_return)
+            self._momentum_short_var.update(momentum_return)
         self._vol.update(returns)
         self._corr.update(returns)
         self._momentum.update(live)
@@ -143,6 +151,7 @@ class FactorRiskModel:
             return RiskModelSnapshot.empty()
         tickers = tuple(self._tickers[i] for i in universe)
         s = corr[np.ix_(universe, universe)]
+        v = vol[np.ix_(universe, universe)]
         sigma = np.sqrt(np.diag(vol)[universe])
 
         raw_weights = factor_weight_matrix(self._definitions, tickers, available=set(tickers))
@@ -156,6 +165,7 @@ class FactorRiskModel:
         names = [d.name for d in definitions]
 
         b, f = macro_betas, f_macro
+        g = _vol_ratio(np.diag(factor_weights.T @ v @ factor_weights), np.diag(f_macro))
         momentum = self._momentum_exposure(tickers, sigma)
         momentum_std = self._momentum_var.std
         if momentum is not None and momentum_std:
@@ -168,17 +178,38 @@ class FactorRiskModel:
                 ]
             )
             names.append(MOMENTUM)
+            short_std = self._momentum_short_var.std
+            g_momentum = (
+                _vol_ratio(np.array([short_std**2]), np.array([momentum_std**2]))
+                if short_std is not None
+                else np.ones(1)
+            )
+            g = np.append(g, g_momentum)
 
         s_ii = np.diag(s)
         common = np.einsum("ik,kl,il->i", b, f, b)
         specific = np.maximum(self._config.residual_floor * s_ii, s_ii - common)
         scale = sigma / np.sqrt(s_ii)
+        # Sigma = diag(scale) (b f b^T + D) diag(scale), split so that F has
+        # short-span factor vols and B stays in real units.
+        arrays = [
+            b * scale[:, None] / g[None, :],
+            f * np.outer(g, g),
+            specific * scale**2,
+            sigma,
+            factor_weights,
+            macro_betas,
+        ]
+        if momentum is not None:
+            arrays.append(momentum)
+        for array in arrays:
+            array.flags.writeable = False
         return RiskModelSnapshot(
             tickers=tickers,
             factors=tuple(names),
-            B=b * scale[:, None],
-            F=f,
-            D=specific * scale**2,
+            B=arrays[0],
+            F=arrays[1],
+            D=arrays[2],
             sigma=sigma,
             factor_weights=factor_weights,
             macro_betas=macro_betas,
@@ -208,6 +239,16 @@ def _complete_universe(corr: FloatArray, vol: FloatArray) -> list[int]:
     return [c for j, c in enumerate(candidates) if np.isfinite(block[j]).all()]
 
 
+def _vol_ratio(short_variance: FloatArray, long_variance: FloatArray) -> FloatArray:
+    """Short-span over long-span vol, per factor. 1.0 where the short-span
+    variance is not finite (a pair not yet warm in the short window)."""
+    ratio = np.sqrt(np.maximum(short_variance, _VARIANCE_EPS)) / np.sqrt(
+        np.maximum(long_variance, _VARIANCE_EPS)
+    )
+    return np.where(np.isfinite(ratio), ratio, 1.0)
+
+
 def _clip_psd(matrix: FloatArray) -> FloatArray:
     values, vectors = np.linalg.eigh((matrix + matrix.T) / 2)
-    return (vectors * np.maximum(values, _EIGEN_FLOOR)) @ vectors.T
+    floor = max(_EIGEN_FLOOR_RELATIVE * float(values.max()), _EIGEN_FLOOR_ABSOLUTE)
+    return (vectors * np.maximum(values, floor)) @ vectors.T

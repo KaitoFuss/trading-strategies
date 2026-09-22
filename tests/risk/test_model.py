@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 from tests.risk.helpers import market_factor_config
+from trading_strategies.risk.covariance import FloatArray
 from trading_strategies.risk.model import MOMENTUM, SPECIFIC, FactorRiskModel, RiskModelSnapshot
 
 REPO_FACTORS = Path(__file__).resolve().parents[2] / "configs" / "factors.json"
@@ -135,3 +136,72 @@ def test_empty_snapshot_is_not_ready() -> None:
     assert snapshot.ready is False
     assert snapshot.factor_returns({"A": 0.01}).size == 0
     assert snapshot.momentum_return({"A": 0.01}) is None
+
+
+def _simulate_vol_jump(n_bars: int, jump_at: int, seed: int = 11) -> list[dict[str, float]]:
+    """MKT and A (true beta 1.0); every return is 3x larger from ``jump_at``."""
+    rng = np.random.default_rng(seed)
+    closes = {"MKT": 100.0, "A": 100.0}
+    path = [dict(closes)]
+    for bar in range(1, n_bars):
+        vol = 3.0 if bar >= jump_at else 1.0
+        market = rng.normal(0, 0.01 * vol)
+        closes["MKT"] *= math.exp(market)
+        closes["A"] *= math.exp(market + rng.normal(0, 0.005 * vol))
+        path.append(dict(closes))
+    return path
+
+
+def _unsplit_covariance(model: FactorRiskModel, snapshot: RiskModelSnapshot) -> FloatArray:
+    """Sigma built without any factor-side rescale:
+    diag(k) (b F b^T + D_raw) diag(k), with k = sigma_short / sqrt(S_ii)."""
+    s = model._corr.covariance()
+    s_ii = np.diag(s)
+    b = snapshot.macro_betas
+    w = snapshot.factor_weights
+    f = w.T @ s @ w
+    specific = np.maximum(0.10 * s_ii, s_ii - np.einsum("ik,kl,il->i", b, f, b))
+    k = snapshot.sigma / np.sqrt(s_ii)
+    return np.outer(k, k) * (b @ f @ b.T + np.diag(specific))
+
+
+def test_exposures_stay_in_real_units_after_a_vol_jump(tmp_path: Path) -> None:
+    jump_at = 700
+    path = _simulate_vol_jump(1000, jump_at)
+    config = market_factor_config(tmp_path, vol_span=60, corr_span=250, corr_min_periods=250)
+    model = FactorRiskModel(["MKT", "A"], config)
+
+    for bar, closes in enumerate(path):
+        model.update(closes)
+        if bar in (jump_at + 60, len(path) - 1):
+            snapshot = model.snapshot
+            assert snapshot.factors == ("Market",)
+            beta = snapshot.B[snapshot.tickers.index("A"), 0]
+            assert beta == pytest.approx(1.0, abs=0.2), f"bar {bar}"
+            np.testing.assert_allclose(
+                snapshot.covariance(), _unsplit_covariance(model, snapshot), rtol=1e-12
+            )
+
+
+def test_bad_closes_do_not_poison_the_snapshot(tmp_path: Path) -> None:
+    path = _simulate(160, {"A": 0.5, "B": -1.0, "C": 0.2})
+    model = FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path))
+    _run(model, path[:150])
+
+    model.update(path[150] | {"A": math.nan, "B": 0.0, "C": -1.0})
+    for closes in path[151:]:
+        model.update(closes)
+        snapshot = model.snapshot
+        assert snapshot.ready
+        for array in (snapshot.B, snapshot.F, snapshot.D):
+            assert np.isfinite(array).all()
+
+
+def test_snapshot_arrays_are_read_only(tmp_path: Path) -> None:
+    snapshot = _run(
+        FactorRiskModel(["MKT", "A", "B"], market_factor_config(tmp_path)),
+        _simulate(120, {"A": 0.5, "B": -1.0}),
+    )
+
+    with pytest.raises(ValueError, match="read-only"):
+        snapshot.B[0, 0] = 1.0

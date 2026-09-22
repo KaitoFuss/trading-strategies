@@ -88,7 +88,9 @@ def residualize(weights: FloatArray, levels: Sequence[int], covariance: FloatArr
     """Residualize each factor portfolio, in column order, against the already
     residualized active factors at strictly earlier levels (GLS projection
     under ``covariance``). Same-level factors stay correlated; ``F`` carries
-    that."""
+    that. Contract: columns are ordered by non-decreasing level (as
+    ``load_factors`` returns them); a column is only residualized against
+    columns before it."""
     residual = weights.copy()
     active = np.any(weights != 0, axis=0)
     for k in range(weights.shape[1]):
