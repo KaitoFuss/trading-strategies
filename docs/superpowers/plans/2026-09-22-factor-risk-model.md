@@ -289,8 +289,16 @@ def test_extra_pages_render_before_the_config_page(
 
 def test_public_page_helpers_and_colors_are_exported() -> None:
     for name in (
-        "ReportPage", "new_page", "save_page", "style_table", "draw_heatmap",
-        "SURFACE", "INK", "MUTED", "GRID", "NEGATIVE",
+        "ReportPage",
+        "new_page",
+        "save_page",
+        "style_table",
+        "draw_heatmap",
+        "SURFACE",
+        "INK",
+        "MUTED",
+        "GRID",
+        "NEGATIVE",
     ):
         assert hasattr(report, name), name
 ```
@@ -794,11 +802,17 @@ def test_repo_factor_file_has_eight_macro_and_seven_granular() -> None:
 
 def test_factors_are_sorted_by_level_stably(tmp_path: Path) -> None:
     path = tmp_path / "f.json"
-    path.write_text(json.dumps({"factors": [
-        {"name": "B", "level": 2, "group": "core", "weights": {"X": 1.0}},
-        {"name": "A1", "level": 1, "group": "core", "weights": {"Y": 1.0}},
-        {"name": "A2", "level": 1, "group": "core", "weights": {"Z": 1.0}},
-    ]}))
+    path.write_text(
+        json.dumps(
+            {
+                "factors": [
+                    {"name": "B", "level": 2, "group": "core", "weights": {"X": 1.0}},
+                    {"name": "A1", "level": 1, "group": "core", "weights": {"Y": 1.0}},
+                    {"name": "A2", "level": 1, "group": "core", "weights": {"Z": 1.0}},
+                ]
+            }
+        )
+    )
 
     assert [f.name for f in load_factors(path, granular=False)] == ["A1", "A2", "B"]
 
@@ -1153,9 +1167,7 @@ def momentum_exposures(
     median = float(np.median(values))
     robust_sigma = _MAD_TO_SIGMA * float(np.median(np.abs(values - median)))
     if robust_sigma > 0:
-        values = np.clip(
-            values, median - _WINSOR * robust_sigma, median + _WINSOR * robust_sigma
-        )
+        values = np.clip(values, median - _WINSOR * robust_sigma, median + _WINSOR * robust_sigma)
     z = _zscore(values)
     if z is None:
         return {}
@@ -1220,9 +1232,15 @@ REPO_FACTORS = Path(__file__).resolve().parents[2] / "configs" / "factors.json"
 
 def _config(tmp_path: Path, **overrides: object) -> FactorModelConfig:
     factors_file = tmp_path / "factors.json"
-    factors_file.write_text(json.dumps({"factors": [
-        {"name": "Market", "level": 1, "group": "core", "weights": {"MKT": 1.0}},
-    ]}))
+    factors_file.write_text(
+        json.dumps(
+            {
+                "factors": [
+                    {"name": "Market", "level": 1, "group": "core", "weights": {"MKT": 1.0}},
+                ]
+            }
+        )
+    )
     fields: dict[str, object] = {
         "factors_file": str(factors_file),
         "vol_span": 20,
@@ -1234,9 +1252,7 @@ def _config(tmp_path: Path, **overrides: object) -> FactorModelConfig:
     return FactorModelConfig(**fields)  # type: ignore[arg-type]
 
 
-def _simulate(
-    n_bars: int, betas: dict[str, float], seed: int = 0
-) -> list[dict[str, float]]:
+def _simulate(n_bars: int, betas: dict[str, float], seed: int = 0) -> list[dict[str, float]]:
     """Closes where each ticker's log return = beta * market + noise."""
     rng = np.random.default_rng(seed)
     closes = {"MKT": 100.0} | dict.fromkeys(betas, 100.0)
@@ -1326,16 +1342,18 @@ def test_macro_factor_returns_are_residualized_portfolio_returns(tmp_path: Path)
     result = snapshot.factor_returns(returns)
 
     r = np.array([returns[t] for t in snapshot.tickers])
-    np.testing.assert_allclose(result[: snapshot.factor_weights.shape[1]], snapshot.factor_weights.T @ r)
+    np.testing.assert_allclose(
+        result[: snapshot.factor_weights.shape[1]], snapshot.factor_weights.T @ r
+    )
 
 
 @pytest.mark.parametrize(("granular", "expected"), [(False, 9), (True, 16)])
 def test_granular_toggle_changes_factor_count(
     tmp_path: Path, granular: bool, expected: int
 ) -> None:
-    tickers = sorted({
-        t for entry in json.loads(REPO_FACTORS.read_text())["factors"] for t in entry["weights"]
-    })
+    tickers = sorted(
+        {t for entry in json.loads(REPO_FACTORS.read_text())["factors"] for t in entry["weights"]}
+    )
     rng = np.random.default_rng(3)
     closes = dict.fromkeys(tickers, 100.0)
     model = FactorRiskModel(
@@ -1518,9 +1536,7 @@ class FactorRiskModel:
         if active.size == 0:
             return RiskModelSnapshot.empty()
         definitions = [self._definitions[k] for k in active]
-        factor_weights = residualize(
-            raw_weights[:, active], [d.level for d in definitions], s
-        )
+        factor_weights = residualize(raw_weights[:, active], [d.level for d in definitions], s)
         f_macro = _clip_psd(factor_weights.T @ s @ factor_weights)
         macro_betas = s @ factor_weights @ np.linalg.pinv(f_macro)
         names = [d.name for d in definitions]
@@ -1531,10 +1547,12 @@ class FactorRiskModel:
         if momentum is not None and momentum_std:
             k = len(names)
             b = np.column_stack([macro_betas, momentum])
-            f = np.block([
-                [f_macro, np.zeros((k, 1))],
-                [np.zeros((1, k)), np.array([[momentum_std**2]])],
-            ])
+            f = np.block(
+                [
+                    [f_macro, np.zeros((k, 1))],
+                    [np.zeros((1, k)), np.array([[momentum_std**2]])],
+                ]
+            )
             names.append(MOMENTUM)
 
         s_ii = np.diag(s)
@@ -1643,9 +1661,15 @@ _WEIGHTS = {"MKT": 0.5, "A": 0.5}
 
 def _config(tmp_path: Path) -> FactorModelConfig:
     factors_file = tmp_path / "factors.json"
-    factors_file.write_text(json.dumps({"factors": [
-        {"name": "Market", "level": 1, "group": "core", "weights": {"MKT": 1.0}},
-    ]}))
+    factors_file.write_text(
+        json.dumps(
+            {
+                "factors": [
+                    {"name": "Market", "level": 1, "group": "core", "weights": {"MKT": 1.0}},
+                ]
+            }
+        )
+    )
     return FactorModelConfig(
         factors_file=str(factors_file),
         vol_span=20,
@@ -1655,7 +1679,9 @@ def _config(tmp_path: Path) -> FactorModelConfig:
     )
 
 
-def _scenario(n_bars: int = 500, seed: int = 0) -> tuple[
+def _scenario(
+    n_bars: int = 500, seed: int = 0
+) -> tuple[
     list[MarketEvent], list[tuple[datetime, dict[str, float]]], list[tuple[datetime, float]]
 ]:
     rng = np.random.default_rng(seed)
@@ -1813,7 +1839,9 @@ def run_attribution(
         snapshot = model.snapshot  # data up to the previous bar
         timestamp = event.timestamp
         if snapshot.ready and timestamp in weights_at and timestamp in returns_at:
-            asset_returns = {t: c / last_close[t] - 1.0 for t, c in closes.items() if t in last_close}
+            asset_returns = {
+                t: c / last_close[t] - 1.0 for t, c in closes.items() if t in last_close
+            }
             w = snapshot.weight_vector(weights_at[timestamp])
             x = snapshot.exposures(w)
             explained = x * snapshot.factor_returns(asset_returns)
@@ -2063,8 +2091,15 @@ def _render_legs(
         return
     fig = new_page(title)
     grid = fig.add_gridspec(
-        len(legs), 2, width_ratios=[1.6, 1], left=0.06, right=0.975,
-        top=0.86, bottom=0.07, hspace=0.45, wspace=0.18,
+        len(legs),
+        2,
+        width_ratios=[1.6, 1],
+        left=0.06,
+        right=0.975,
+        top=0.86,
+        bottom=0.07,
+        hspace=0.45,
+        wspace=0.18,
     )
     for row, (label, result) in enumerate(legs.items()):
         draw(fig.add_subplot(grid[row, 0]), fig.add_subplot(grid[row, 1]), label, result)
@@ -2092,7 +2127,9 @@ def _draw_risk(left: Axes, right: Axes, label: str, result: AttributionResult) -
     ex_ante = result.predicted_vol * _ANNUAL
     realized = result.portfolio_returns.rolling(60, min_periods=20).std() * _ANNUAL
     right.plot(ex_ante.index, ex_ante.to_numpy(), color=INK, linewidth=1.0, label="Ex-ante")
-    right.plot(realized.index, realized.to_numpy(), color=NEGATIVE, linewidth=1.0, label="Realized 60d")
+    right.plot(
+        realized.index, realized.to_numpy(), color=NEGATIVE, linewidth=1.0, label="Realized 60d"
+    )
     right.yaxis.set_major_formatter(PercentFormatter(1.0))
     right.legend(fontsize=7, frameon=False, loc="upper left")
     _style(right, "Annualized vol")
@@ -2271,14 +2308,12 @@ from trading_strategies.risk.report_pages import attribution_pages
 In `main()`, add before `report_path = save_report(`:
 
 ```python
-    extra_pages: list[ReportPage] = []
-    if config.factor_model is not None:
-        results = attribute_backtest(
-            Path(config.data), config.tickers, config.factor_model, trackers
-        )
-        for label, result in results.items():
-            logger.info("%s: factor-model bias statistic %.2f", label, result.bias_statistic())
-        extra_pages = attribution_pages(results)
+extra_pages: list[ReportPage] = []
+if config.factor_model is not None:
+    results = attribute_backtest(Path(config.data), config.tickers, config.factor_model, trackers)
+    for label, result in results.items():
+        logger.info("%s: factor-model bias statistic %.2f", label, result.bias_statistic())
+    extra_pages = attribution_pages(results)
 ```
 
 Pass `extra_pages=extra_pages,` to `save_report` (before `config=config`).
