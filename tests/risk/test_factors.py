@@ -27,9 +27,9 @@ def test_factors_are_sorted_by_level_stably(tmp_path: Path) -> None:
         json.dumps(
             {
                 "factors": [
-                    {"name": "B", "level": 2, "group": "core", "weights": {"X": 1.0}},
-                    {"name": "A1", "level": 1, "group": "core", "weights": {"Y": 1.0}},
-                    {"name": "A2", "level": 1, "group": "core", "weights": {"Z": 1.0}},
+                    {"name": "B", "level": 2, "granular": False, "weights": {"X": 1.0}},
+                    {"name": "A1", "level": 1, "granular": False, "weights": {"Y": 1.0}},
+                    {"name": "A2", "level": 1, "granular": False, "weights": {"Z": 1.0}},
                 ]
             }
         )
@@ -41,12 +41,11 @@ def test_factors_are_sorted_by_level_stably(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("factors", "message"),
     [
-        ([{"name": "A", "level": 1, "group": "bogus", "weights": {"X": 1.0}}], "group"),
-        ([{"name": "A", "level": 1, "group": "core", "weights": {}}], "weights"),
+        ([{"name": "A", "level": 1, "granular": False, "weights": {}}], "weights"),
         (
             [
-                {"name": "A", "level": 1, "group": "core", "weights": {"X": 1.0}},
-                {"name": "A", "level": 2, "group": "core", "weights": {"Y": 1.0}},
+                {"name": "A", "level": 1, "granular": False, "weights": {"X": 1.0}},
+                {"name": "A", "level": 2, "granular": False, "weights": {"Y": 1.0}},
             ],
             "duplicate",
         ),
@@ -62,7 +61,7 @@ def test_invalid_factor_files_are_rejected(
 
 
 def _factor(name: str, weights: dict[str, float], level: int = 1) -> FactorDefinition:
-    return FactorDefinition(name=name, level=level, group="core", weights=weights)
+    return FactorDefinition(name=name, level=level, granular=False, weights=weights)
 
 
 def test_missing_long_ticker_renormalizes_the_leg() -> None:

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from trading_strategies.risk.covariance import EwmCovariance
+from trading_strategies.utils.streaming import EwmCovariance
 
 
 def _frame(n: int = 120, seed: int = 1) -> pd.DataFrame:

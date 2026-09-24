@@ -14,7 +14,7 @@ def market_factor_config(tmp_path: Path, **overrides: object) -> FactorModelConf
         json.dumps(
             {
                 "factors": [
-                    {"name": "Market", "level": 1, "group": "core", "weights": {"MKT": 1.0}},
+                    {"name": "Market", "level": 1, "granular": False, "weights": {"MKT": 1.0}},
                 ]
             }
         )

@@ -10,22 +10,18 @@ import json
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, cast
 
 import numpy as np
 from backtester.core.events import Ticker
 
-from trading_strategies.risk.covariance import FloatArray
-
-FactorGroup = Literal["core", "secondary", "granular"]
-_GROUPS: frozenset[str] = frozenset({"core", "secondary", "granular"})
+from trading_strategies.utils.streaming import FloatArray
 
 
 @dataclass(frozen=True)
 class FactorDefinition:
     name: str
     level: int
-    group: FactorGroup
+    granular: bool
     weights: Mapping[Ticker, float]
 
 
@@ -35,8 +31,6 @@ def load_factors(path: Path, *, granular: bool) -> list[FactorDefinition]:
     seen: set[str] = set()
     for entry in entries:
         name = str(entry["name"])
-        if entry["group"] not in _GROUPS:
-            raise ValueError(f"factor {name!r}: unknown group {entry['group']!r}")
         if not entry["weights"]:
             raise ValueError(f"factor {name!r}: empty weights")
         if name in seen:
@@ -46,12 +40,12 @@ def load_factors(path: Path, *, granular: bool) -> list[FactorDefinition]:
             FactorDefinition(
                 name=name,
                 level=int(entry["level"]),
-                group=cast(FactorGroup, entry["group"]),
+                granular=bool(entry["granular"]),
                 weights={str(t): float(w) for t, w in entry["weights"].items()},
             )
         )
     if not granular:
-        factors = [factor for factor in factors if factor.group != "granular"]
+        factors = [factor for factor in factors if not factor.granular]
     return sorted(factors, key=lambda factor: factor.level)
 
 

@@ -5,17 +5,17 @@ import math
 import numpy as np
 import pytest
 
-from trading_strategies.risk.momentum import MomentumSignal, momentum_exposures
+from trading_strategies.risk.style_factors import MomentumSignal, momentum_exposures
 
 
 def test_raw_is_none_until_lookback_plus_one_closes() -> None:
     signal = MomentumSignal(["A"], lookback=3, skip=1)
     for close in (100.0, 101.0, 102.0):
         signal.update({"A": close})
-    assert signal.raw("A") is None
+    assert signal.raw_return("A") is None
 
     signal.update({"A": 104.0})
-    assert signal.raw("A") == pytest.approx(math.log(102.0 / 100.0))
+    assert signal.raw_return("A") == pytest.approx(math.log(102.0 / 100.0))
 
 
 def test_raw_rolls_forward_and_ignores_unknown_tickers() -> None:
@@ -23,7 +23,7 @@ def test_raw_rolls_forward_and_ignores_unknown_tickers() -> None:
     for close in (100.0, 110.0, 121.0, 133.1):
         signal.update({"A": close, "ZZZ": 1.0})
 
-    assert signal.raw("A") == pytest.approx(math.log(133.1 / 110.0))
+    assert signal.raw_return("A") == pytest.approx(math.log(133.1 / 110.0))
 
 
 def test_exposures_are_standardized() -> None:

@@ -28,7 +28,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import PercentFormatter
 
 from trading_strategies.risk.attribution import AttributionResult
-from trading_strategies.risk.model import SPECIFIC
+from trading_strategies.risk.model import IDIOSYNCRATIC
 
 _ANNUAL = math.sqrt(TRADING_DAYS_PER_YEAR)
 _BIAS_BAND = (0.8, 1.2)
@@ -100,7 +100,7 @@ def _draw_exposures(left: Axes, right: Axes, label: str, result: AttributionResu
 def _draw_risk(left: Axes, right: Axes, label: str, result: AttributionResult) -> None:
     shares = result.risk_shares.mean()
     names = [str(n) for n in shares.index]
-    left.barh(names, shares.to_numpy(), color=[MUTED if n == SPECIFIC else INK for n in names])
+    left.barh(names, shares.to_numpy(), color=[MUTED if n == IDIOSYNCRATIC else INK for n in names])
     left.invert_yaxis()
     left.xaxis.set_major_formatter(PercentFormatter(1.0))
     _style(left, f"{label} - mean share of ex-ante variance")

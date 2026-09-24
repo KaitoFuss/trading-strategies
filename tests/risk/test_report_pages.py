@@ -9,7 +9,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 
 from trading_strategies.risk.attribution import RESIDUAL, AttributionResult
-from trading_strategies.risk.model import SPECIFIC
+from trading_strategies.risk.model import IDIOSYNCRATIC
 from trading_strategies.risk.report_pages import attribution_pages
 
 
@@ -30,7 +30,7 @@ def _result(n: int = 300) -> AttributionResult:
         exposures=pd.DataFrame(
             {"Equity": rng.normal(0.5, 0.1, n), "Momentum": rng.normal(1.0, 0.2, n)}, index=dates
         ),
-        risk_shares=pd.DataFrame({"Equity": 0.5, "Momentum": 0.3, SPECIFIC: 0.2}, index=dates),
+        risk_shares=pd.DataFrame({"Equity": 0.5, "Momentum": 0.3, IDIOSYNCRATIC: 0.2}, index=dates),
         contributions=pd.DataFrame(
             {"Equity": returns * 0.5, "Momentum": returns * 0.3, RESIDUAL: returns * 0.2},
             index=dates,

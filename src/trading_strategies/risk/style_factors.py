@@ -1,6 +1,8 @@
-"""Characteristic-based momentum for the factor risk model: an asset's
-exposure is its vol-scaled 12-1 month return, standardized across the assets
-live on that bar (Barra-style), not a time-series beta."""
+"""Characteristic-based style factors for the risk model (Barra-style: an
+exposure is a standardized per-asset characteristic, not a time-series beta).
+Momentum is the only one implemented so far: an asset's exposure is its
+vol-scaled 12-1 month return, standardized across the assets live on that
+bar. Future style factors (e.g. carry, value) belong in this file too."""
 
 from __future__ import annotations
 
@@ -11,7 +13,7 @@ from collections.abc import Mapping, Sequence
 import numpy as np
 from backtester.core.events import Ticker
 
-from trading_strategies.risk.covariance import FloatArray
+from trading_strategies.utils.streaming import FloatArray
 
 _WINSOR = 3.0
 _MAD_TO_SIGMA = 1.4826
@@ -32,7 +34,7 @@ class MomentumSignal:
             if history is not None:
                 history.append(close)
 
-    def raw(self, ticker: Ticker) -> float | None:
+    def raw_return(self, ticker: Ticker) -> float | None:
         history = self._closes[ticker]
         if len(history) < self._lookback + 1:
             return None

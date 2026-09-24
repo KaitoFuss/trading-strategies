@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from backtester.core.events import MarketEvent, Ticker
 from backtester.data.frame_market_data import FrameMarketData
@@ -79,7 +80,8 @@ def run_attribution(
             asset_returns = {
                 t: c / last_close[t] - 1.0 for t, c in closes.items() if t in last_close
             }
-            w = snapshot.weight_vector(weights_at[timestamp])
+            leg_weights = weights_at[timestamp]
+            w = np.array([leg_weights.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
             x = snapshot.exposures(w)
             explained = x * snapshot.factor_returns(asset_returns)
             portfolio_return = returns_at[timestamp]

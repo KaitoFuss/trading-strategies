@@ -8,8 +8,13 @@ import numpy as np
 import pytest
 
 from tests.risk.helpers import market_factor_config
-from trading_strategies.risk.covariance import FloatArray
-from trading_strategies.risk.model import MOMENTUM, SPECIFIC, FactorRiskModel, RiskModelSnapshot
+from trading_strategies.risk.model import (
+    IDIOSYNCRATIC,
+    MOMENTUM,
+    FactorRiskModel,
+    RiskModelSnapshot,
+)
+from trading_strategies.utils.streaming import FloatArray
 
 REPO_FACTORS = Path(__file__).resolve().parents[2] / "configs" / "factors.json"
 
@@ -32,6 +37,10 @@ def _run(model: FactorRiskModel, path: list[dict[str, float]]) -> RiskModelSnaps
     for closes in path:
         model.update(closes)
     return model.snapshot
+
+
+def _weight_vector(snapshot: RiskModelSnapshot, weights: dict[str, float]) -> FloatArray:
+    return np.array([weights.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
 
 
 def test_not_ready_until_correlation_warm(tmp_path: Path) -> None:
@@ -78,11 +87,11 @@ def test_momentum_joins_once_its_variance_is_warm(tmp_path: Path) -> None:
 def test_risk_decomposition_sums_to_one(tmp_path: Path) -> None:
     path = _simulate(300, {"A": 0.5, "B": -1.0, "C": 0.2})
     snapshot = _run(FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path)), path)
-    w = snapshot.weight_vector({"A": 0.5, "B": 0.3, "C": -0.2})
+    w = _weight_vector(snapshot, {"A": 0.5, "B": 0.3, "C": -0.2})
 
     shares = snapshot.risk_decomposition(w)
 
-    assert set(shares) == {*snapshot.factors, SPECIFIC}
+    assert set(shares) == {*snapshot.factors, IDIOSYNCRATIC}
     assert sum(shares.values()) == pytest.approx(1.0)
     assert snapshot.portfolio_variance(w) == pytest.approx(w @ snapshot.covariance() @ w)
 
@@ -91,7 +100,7 @@ def test_zero_portfolio_has_zero_risk_shares(tmp_path: Path) -> None:
     path = _simulate(120, {"A": 0.5, "B": -1.0})
     snapshot = _run(FactorRiskModel(["MKT", "A", "B"], market_factor_config(tmp_path)), path)
 
-    shares = snapshot.risk_decomposition(snapshot.weight_vector({}))
+    shares = snapshot.risk_decomposition(_weight_vector(snapshot, {}))
 
     assert all(value == 0.0 for value in shares.values())
 
