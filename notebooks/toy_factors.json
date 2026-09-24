@@ -1,0 +1,1 @@
+{"factors": [{"name": "Equity", "level": 1, "granular": false, "weights": {"EQ_US": 0.5, "EQ_INTL": 0.5}}, {"name": "Rates", "level": 1, "granular": false, "weights": {"RATE_A": 0.5, "RATE_B": 0.5}}, {"name": "Credit", "level": 2, "granular": false, "weights": {"CREDIT": 1.0}}]}
