@@ -105,6 +105,29 @@ class RiskModelSnapshot:
         return float(self.momentum @ macro_residual) / denom if denom > 0 else 0.0
 
 
+def cap_common(b: FloatArray, f: FloatArray, s_ii: FloatArray) -> tuple[FloatArray, FloatArray]:
+    """Scale down any row of ``b`` whose factor variance exceeds the asset's
+    own variance, so ``common_i <= s_ii_i`` everywhere.
+
+    A factor-defining ETF (UUP is the Foreign Currency factor, SHY sits inside
+    Rates/Curve) is already ~fully explained by the macro block; the momentum
+    column then adds variance on top, and the floored ``D`` adds 10% more. The
+    diagnostics spike measured the result at up to 37% too much variance for
+    UUP, which makes ``Sigma`` overstate exactly the cheapest hedging
+    instruments and leaves the residual matrix non-PSD. Scaling the row (rather
+    than only flooring ``D``) also shrinks that asset's modelled covariances,
+    which is the conservative, self-consistent choice: the model claimed more
+    covariance than the data supports."""
+    common = np.einsum("ik,kl,il->i", b, f, b)
+    over = common > s_ii
+    if not over.any():
+        return b, common
+    scale = np.ones_like(common)
+    scale[over] = np.sqrt(s_ii[over] / common[over])
+    capped = b * scale[:, None]
+    return capped, np.einsum("ik,kl,il->i", capped, f, capped)
+
+
 class FactorRiskModel:
     def __init__(self, tickers: Sequence[Ticker], config: FactorModelConfig) -> None:
         self._tickers = tuple(tickers)
@@ -262,7 +285,7 @@ class FactorRiskModel:
         correlations, see the module docstring), and packages the immutable
         ``RiskModelSnapshot``."""
         s_ii = np.diag(s)
-        common = np.einsum("ik,kl,il->i", b, f, b)
+        b, common = cap_common(b, f, s_ii)
         specific = np.maximum(self._config.residual_floor * s_ii, s_ii - common)
         scale = sigma / np.sqrt(s_ii)
         # Sigma = diag(scale) (b f b^T + D) diag(scale), split so that F has

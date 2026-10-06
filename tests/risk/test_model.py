@@ -13,6 +13,7 @@ from trading_strategies.risk.model import (
     MOMENTUM,
     FactorRiskModel,
     RiskModelSnapshot,
+    cap_common,
 )
 from trading_strategies.utils.streaming import FloatArray
 
@@ -214,3 +215,45 @@ def test_snapshot_arrays_are_read_only(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="read-only"):
         snapshot.B[0, 0] = 1.0
+
+
+def test_cap_common_scales_only_over_explained_rows() -> None:
+    b = np.array([[2.0], [0.5]])
+    f = np.array([[1.0]])
+    s_ii = np.array([1.0, 1.0])
+
+    capped, common = cap_common(b, f, s_ii)
+
+    # row 0 claimed 4.0 of variance against 1.0 available -> halved
+    assert capped[0, 0] == pytest.approx(1.0)
+    assert capped[1, 0] == pytest.approx(0.5)  # untouched
+    np.testing.assert_allclose(common, [1.0, 0.25])
+
+
+def test_cap_common_leaves_a_well_specified_model_alone() -> None:
+    b = np.array([[0.6, 0.1], [0.2, 0.3]])
+    f = np.array([[1.0, 0.0], [0.0, 2.0]])
+    s_ii = np.array([5.0, 5.0])
+
+    capped, common = cap_common(b, f, s_ii)
+
+    np.testing.assert_allclose(capped, b)
+    np.testing.assert_allclose(common, np.einsum("ik,kl,il->i", b, f, b))
+
+
+def test_model_variance_never_exceeds_the_floored_total(tmp_path: Path) -> None:
+    """Σ_ii = common + D, and D is floored at 10% of S_ii, so the cap makes
+    Σ_ii <= sigma_i^2 * 1.1 for every asset. Before the cap, factor-defining
+    assets came out far above that."""
+    path = _simulate(400, {"A": 0.5, "B": -1.0, "C": 0.2})
+    snapshot = _run(FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path)), path)
+
+    total = np.diag(snapshot.covariance())
+    assert np.all(total <= snapshot.sigma**2 * (1.0 + 0.10) + 1e-12)
+
+
+def test_capped_model_stays_psd(tmp_path: Path) -> None:
+    path = _simulate(400, {"A": 0.5, "B": -1.0, "C": 0.2})
+    snapshot = _run(FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path)), path)
+
+    assert np.linalg.eigvalsh(snapshot.covariance()).min() > 0
