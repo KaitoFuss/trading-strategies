@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-from typing import cast
+from pathlib import Path
 
 import numpy as np
 import pytest
 
+from tests.risk.helpers import market_factor_config
+from tests.risk.test_model import _simulate
 from trading_strategies.risk.diagnostics import (
     exposure_collinearity,
     loading_drift,
     residual_correlations,
 )
-from trading_strategies.risk.model import RiskModelSnapshot
+from trading_strategies.risk.model import FactorRiskModel, RiskModelSnapshot
+from trading_strategies.utils.streaming import EwmCovariance, FloatArray
 
 
 def _snapshot(
-    b: np.ndarray, f: np.ndarray, d: np.ndarray, *, momentum: np.ndarray | None = None
+    b: FloatArray, f: FloatArray, d: FloatArray, *, momentum: FloatArray | None = None
 ) -> RiskModelSnapshot:
     n, k = b.shape
     tickers = tuple(f"T{i}" for i in range(n))
@@ -47,14 +50,14 @@ def test_residual_correlations_recovers_a_planted_pair() -> None:
 
     assert report.correlations.loc["T0", "T1"] == pytest.approx(0.5)
     assert report.correlations.loc["T0", "T2"] == pytest.approx(0.0)
-    assert np.isnan(cast(float, report.correlations.loc["T0", "T0"]))
+    assert np.isnan(float(report.correlations["T0"].loc["T0"]))
     assert report.worst_pairs(1).index[0] == "T0/T1"
 
 
 def test_residual_correlations_masks_factor_defining_assets() -> None:
     b = np.array([[1.0], [1.0]])
     f = np.array([[1.0]])
-    d = np.array([1.0, 1.0])
+    d = np.array([1.0, 1e-9])
     snapshot = _snapshot(b, f, d)
     # asset 1 is fully explained: residual share ~0 -> masked, not reported
     empirical = b @ f @ b.T + np.diag([1.0, 1e-9])
@@ -75,7 +78,7 @@ def test_exposure_collinearity_matches_numpy() -> None:
 
     result = exposure_collinearity(snapshot)
 
-    assert list(result.index) == ["F0", "F1"]
+    assert sorted(result.index) == ["F0", "F1"]
     assert result["F0"] == pytest.approx(np.corrcoef(momentum, betas[:, 0])[0, 1])
 
 
@@ -90,12 +93,42 @@ def test_loading_drift_reports_change_over_level() -> None:
 
     assert frame.loc["Equity", "median_abs_change"] == pytest.approx(0.0)
     assert frame.loc["Momentum", "median_abs_change"] == pytest.approx(0.5)
-    assert cast(float, frame.loc["Momentum", "drift_ratio"]) > cast(
-        float, frame.loc["Equity", "drift_ratio"]
-    )
+    drift_ratio = frame["drift_ratio"]
+    assert float(drift_ratio.loc["Momentum"]) > float(drift_ratio.loc["Equity"])
 
 
 def test_exposure_collinearity_without_momentum_is_empty() -> None:
     snapshot = _snapshot(np.array([[1.0], [0.5]]), np.eye(1), np.ones(2))
 
     assert exposure_collinearity(snapshot).empty
+
+
+def test_residual_share_is_bounded_for_a_model_built_snapshot(tmp_path: Path) -> None:
+    """The hand-built ``_snapshot`` fixtures bypass ``_finalize``'s rescaling,
+    so a unit mismatch between ``share``'s numerator and denominator would
+    not show up there. Drive the real model instead and check the invariant
+    the brief promises: ``share`` is a fraction of variance, so it must stay
+    in ``[0, 1]``."""
+    tickers = ("MKT", "A", "B")
+    config = market_factor_config(tmp_path)
+    path = _simulate(300, {"A": 0.5, "B": -1.0})
+    model = FactorRiskModel(tickers, config)
+    empirical = EwmCovariance(tickers, span=config.corr_span, min_periods=config.corr_min_periods)
+
+    last_close: dict[str, float] | None = None
+    for closes in path:
+        if last_close is not None:
+            logs = {t: float(np.log(closes[t] / last_close[t])) for t in tickers}
+            empirical.update(logs)
+        model.update(closes)
+        last_close = closes
+
+    snapshot = model.snapshot
+    assert snapshot.ready
+    report = residual_correlations(snapshot, empirical.covariance(), tickers)
+
+    # A tiny floating-point overshoot (MKT *is* the Market factor, so its
+    # share is ~0 up to roundoff) is fine; a real unit mismatch would blow
+    # past this tolerance by many orders of magnitude.
+    tolerance = 1e-9
+    assert ((report.share >= -tolerance) & (report.share <= 1.0 + tolerance)).all()

@@ -39,14 +39,21 @@ def main() -> None:
     )
     off = report.correlations.to_numpy()
     off = off[np.isfinite(off)]
-    logger.info(
-        "residual correlations: N=%d of %d  mean|rho|=%.3f  p95|rho|=%.3f  share>0.5=%.1f%%",
-        len(report.correlations),
-        len(report.share),
-        float(np.mean(np.abs(off))),
-        float(np.percentile(np.abs(off), 95)),
-        100.0 * float(np.mean(np.abs(off) > 0.5)),
-    )
+    if off.size:
+        logger.info(
+            "residual correlations: N=%d of %d  mean|rho|=%.3f  p95|rho|=%.3f  share>0.5=%.1f%%",
+            len(report.correlations),
+            len(report.share),
+            float(np.mean(np.abs(off))),
+            float(np.percentile(np.abs(off), 95)),
+            100.0 * float(np.mean(np.abs(off) > 0.5)),
+        )
+    else:
+        logger.info(
+            "residual correlations: N=%d of %d (no off-diagonal pairs to report)",
+            len(report.correlations),
+            len(report.share),
+        )
     logger.info("worst pairs:\n%s", report.worst_pairs().round(2).to_string())
     logger.info(
         "masked (residual share <= 5%%): %s",

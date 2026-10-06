@@ -55,23 +55,28 @@ def residual_correlations(
 
     ``empirical_cov`` is the long-span covariance over ``tickers``; it is
     rescaled into the snapshot's short-span vol units the same way the model
-    rescales, so the two sides are comparable. An asset that *is* a factor has
-    ~zero residual, and its residual correlations are noise over noise: those
-    assets are masked out and reported in ``masked`` instead.
+    rescales, so the two sides are comparable. The empirical signal this
+    check exists to find lives entirely in the off-diagonal ``correlations``
+    block: two assets whose residuals move together after the model claims
+    they are independent. ``share`` is deliberately a *model* quantity
+    (``D_i / sigma_i**2``, the fraction of each asset's own variance the
+    model leaves unexplained by the factor block) used only to decide which
+    assets to mask -- an asset that *is* a factor has ~zero modeled residual,
+    and its residual correlations are noise over noise, so it is reported in
+    ``masked`` instead of ``correlations``.
+
+    A residual correlation above 1 in magnitude is possible, and
+    informative, not a bug: it means ``D`` is too small to be consistent
+    with the observed cross-covariance.
     """
     index = {ticker: i for i, ticker in enumerate(tickers)}
     rows = [index[ticker] for ticker in snapshot.tickers]
     empirical = empirical_cov[np.ix_(rows, rows)]
-    common = snapshot.B @ snapshot.F @ snapshot.B.T
     scale = snapshot.sigma / np.sqrt(np.diag(empirical))
     scaled = empirical * np.outer(scale, scale)
 
-    residual = scaled - common
-    # `share` must stay in the empirical's own (unscaled) units: the
-    # per-asset `scale` above forces scaled_ii == sigma_i**2 exactly, which
-    # would make diag(residual) collapse to the model's own D -- a number we
-    # already have -- and hide the very thing this check exists to find.
-    share = (np.diag(empirical) - np.diag(common)) / np.diag(empirical)
+    residual = scaled - snapshot.B @ snapshot.F @ snapshot.B.T
+    share = np.diag(residual) / np.diag(scaled)
     keep = np.flatnonzero(share > min_share)
     masked = tuple(t for t, s in zip(snapshot.tickers, share, strict=True) if s <= min_share)
 
@@ -98,7 +103,8 @@ def exposure_collinearity(snapshot: RiskModelSnapshot) -> pd.Series[float]:
         name: float(np.corrcoef(snapshot.momentum, snapshot.macro_betas[:, k])[0, 1])
         for k, name in enumerate(macro_names)
     }
-    return pd.Series(values, dtype=float)
+    series = pd.Series(values, dtype=float)
+    return series.reindex(series.abs().sort_values(ascending=False).index)
 
 
 def loading_drift(history: Loadings) -> pd.DataFrame:
