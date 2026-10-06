@@ -107,3 +107,12 @@ def test_inactive_columns_are_skipped() -> None:
     weights = np.array([[0.0, 1.0], [0.0, 0.0]])
 
     np.testing.assert_allclose(residualize(weights, [1, 2], covariance), weights)
+
+
+def test_energy_factor_holds_only_the_two_equity_etfs() -> None:
+    """A factor built from exactly three assets forces their residuals to sum
+    to ~0, which showed up in the diagnostics spike as a fake OIH/USO residual
+    correlation of -0.89. With two members USO keeps an honest residual."""
+    energy = next(f for f in load_factors(REPO_FACTORS, granular=True) if f.name == "Energy")
+
+    assert energy.weights == {"XLE": 0.5, "OIH": 0.5}

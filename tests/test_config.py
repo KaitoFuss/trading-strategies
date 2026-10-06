@@ -38,7 +38,7 @@ def test_from_json_loads_shipped_config() -> None:
     config_path = Path(__file__).parent.parent / "configs" / "backtest_macd.json"
     config = MacdBacktestConfig.from_json(config_path)
 
-    assert len(config.tickers) == 61
+    assert len(config.tickers) == 60
     assert config.target_vol == 0.15
     assert config.cost_bps == 0.0
     assert config.commission_bps == 0.0
@@ -49,7 +49,7 @@ def test_from_json_loads_shipped_rescaled_config() -> None:
     config_path = Path(__file__).parent.parent / "configs" / "backtest_macd_rescaled.json"
     config = MacdBacktestConfig.from_json(config_path)
 
-    assert len(config.tickers) == 61
+    assert len(config.tickers) == 60
     assert config.target_vol == 0.15
     assert config.rescale_to_portfolio_vol is True
 
@@ -71,3 +71,13 @@ def test_from_json_raises_value_error_on_invalid_config(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=str(path)):
         MacdBacktestConfig.from_json(path)
+
+
+def test_shipped_configs_hold_the_sixty_ticker_universe() -> None:
+    """PFF is deliberately absent: the risk model explains ~92% of its
+    variance with Rates/Credit/Equity and the leftover tracks European equity
+    markets, so an optimizer would use it as a hedge it cannot be."""
+    for name in ("backtest_macd.json", "backtest_macd_rescaled.json"):
+        config = MacdBacktestConfig.from_json(Path("configs") / name)
+        assert len(config.tickers) == 60, name
+        assert "PFF" not in config.tickers, name
