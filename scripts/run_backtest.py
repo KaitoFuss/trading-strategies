@@ -12,10 +12,12 @@ import sys
 from pathlib import Path
 
 from backtester.tracker.metrics import monthly_returns_table, strategy_correlation_matrix
-from backtester.tracker.report import save_report
+from backtester.tracker.report import ReportPage, save_report
 
 from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.runner import run_macd_benchmark
+from trading_strategies.risk.attribution import attribute_backtest
+from trading_strategies.risk.report_pages import attribution_pages
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +38,15 @@ def main() -> None:
     monthly_tables = {label: monthly_returns_table(history) for label, history in histories.items()}
     correlation = strategy_correlation_matrix(histories)
 
+    extra_pages: list[ReportPage] = []
+    if config.factor_model is not None:
+        results = attribute_backtest(
+            Path(config.data), config.tickers, config.factor_model, trackers
+        )
+        for label, result in results.items():
+            logger.info("%s: factor-model bias statistic %.2f", label, result.bias_statistic())
+        extra_pages = attribution_pages(results)
+
     report_path = save_report(
         Path(config.output_dir),
         histories,
@@ -43,6 +54,7 @@ def main() -> None:
         trade_metrics,
         monthly_tables,
         correlation,
+        extra_pages=extra_pages,
         config=config,
     )
     logger.info("Done — wrote %s", report_path)

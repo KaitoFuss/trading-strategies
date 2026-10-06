@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import math
 from dataclasses import replace
-from datetime import datetime, timedelta
 from pathlib import Path
 
-import numpy as np
-import pandas as pd
 import pytest
 
+from tests.synthetic_data import write_synthetic_parquet
 from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.portfolio import RescaledTargetVolPortfolio
 from trading_strategies.network_momentum.runner import run_macd_benchmark
@@ -17,27 +15,10 @@ _TICKERS = ("SPY", "QQQ", "TLT")
 _NUM_BARS = 500
 
 
-def _write_synthetic_parquet(path: Path) -> None:
-    rng = np.random.default_rng(7)
-    start = datetime(2020, 1, 1)
-    rows: list[dict[str, object]] = []
-    for ticker in _TICKERS:
-        closes = 100 + np.cumsum(rng.normal(0, 1, _NUM_BARS))
-        for i, close in enumerate(closes):
-            rows.append(
-                {
-                    "date": start + timedelta(days=i),
-                    "ticker": ticker,
-                    "close": float(close),
-                }
-            )
-    pd.DataFrame(rows).to_parquet(path)
-
-
 @pytest.fixture
 def config(tmp_path: Path) -> MacdBacktestConfig:
     data_path = tmp_path / "raw.parquet"
-    _write_synthetic_parquet(data_path)
+    write_synthetic_parquet(data_path, _TICKERS, _NUM_BARS)
     return MacdBacktestConfig(
         name="MACD Benchmark",
         data=str(data_path),
