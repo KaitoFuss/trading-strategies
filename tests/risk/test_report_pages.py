@@ -30,7 +30,9 @@ def _result(n: int = 300) -> AttributionResult:
         exposures=pd.DataFrame(
             {"Equity": rng.normal(0.5, 0.1, n), "Momentum": rng.normal(1.0, 0.2, n)}, index=dates
         ),
-        risk_shares=pd.DataFrame({"Equity": 0.5, "Momentum": 0.3, IDIOSYNCRATIC: 0.2}, index=dates),
+        risk_decomposition=pd.DataFrame(
+            {"Equity": 0.5, "Momentum": 0.3, IDIOSYNCRATIC: 0.2}, index=dates
+        ),
         contributions=pd.DataFrame(
             {"Equity": returns * 0.5, "Momentum": returns * 0.3, RESIDUAL: returns * 0.2},
             index=dates,
@@ -44,7 +46,7 @@ def _empty() -> AttributionResult:
     dates = pd.DatetimeIndex([])
     return AttributionResult(
         exposures=pd.DataFrame(index=dates),
-        risk_shares=pd.DataFrame(index=dates),
+        risk_decomposition=pd.DataFrame(index=dates),
         contributions=pd.DataFrame(index=dates),
         portfolio_returns=pd.Series(dtype=float, index=dates),
         predicted_vol=pd.Series(dtype=float, index=dates),

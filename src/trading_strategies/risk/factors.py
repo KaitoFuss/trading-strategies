@@ -49,6 +49,13 @@ def load_factors(path: Path, *, granular: bool) -> list[FactorDefinition]:
     return sorted(factors, key=lambda factor: factor.level)
 
 
+def factor_tickers(factors: Sequence[FactorDefinition]) -> frozenset[Ticker]:
+    """Every ticker referenced by any factor's weights -- the ticker universe
+    a ``FactorRiskModel`` needs price data for, on top of whatever the caller
+    already wants priced (e.g. the backtest's own traded tickers)."""
+    return frozenset(t for factor in factors for t in factor.weights)
+
+
 def factor_weight_matrix(
     factors: Sequence[FactorDefinition],
     tickers: Sequence[Ticker],

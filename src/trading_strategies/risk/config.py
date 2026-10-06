@@ -1,5 +1,4 @@
-"""Config for the factor risk model (see
-docs/superpowers/specs/2026-09-22-factor-risk-model-design.md)."""
+"""Config for the factor risk model."""
 
 from __future__ import annotations
 

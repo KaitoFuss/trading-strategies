@@ -27,6 +27,7 @@ from backtester.data.frame_market_data import FrameMarketData
 from backtester.tracker.metrics import PerformanceTracker
 
 from trading_strategies.risk.config import FactorModelConfig
+from trading_strategies.risk.factors import factor_tickers, load_factors
 from trading_strategies.risk.model import FactorRiskModel
 
 RESIDUAL = "Specific + other"
@@ -35,7 +36,7 @@ RESIDUAL = "Specific + other"
 @dataclass(frozen=True)
 class AttributionResult:
     exposures: pd.DataFrame
-    risk_shares: pd.DataFrame
+    risk_decomposition: pd.DataFrame
     contributions: pd.DataFrame
     portfolio_returns: pd.Series[float]
     predicted_vol: pd.Series[float]
@@ -59,14 +60,19 @@ def run_attribution(
     model: FactorRiskModel,
 ) -> AttributionResult:
     weights_at = dict(weights_history)
+    # Log returns, matching FactorRiskModel's own convention (model.py's
+    # update()) -- B/F/D/sigma are all fit on log returns, so every return fed
+    # into factor_returns() or compared against predicted_vol needs the same
+    # units. equity > 0 guards math.log against a wiped-out/negative equity
+    # bar (simple-return division wouldn't raise there, log does).
     returns_at = {
-        timestamp: equity / previous - 1.0
+        timestamp: math.log(equity / previous)
         for (_, previous), (timestamp, equity) in itertools.pairwise(equity_history)
-        if previous > 0
+        if previous > 0 and equity > 0
     }
     index: list[datetime] = []
     exposures: list[dict[str, float]] = []
-    shares: list[dict[str, float]] = []
+    decomposition: list[dict[str, float]] = []
     contributions: list[dict[str, float]] = []
     portfolio: list[float] = []
     predicted: list[float] = []
@@ -78,7 +84,7 @@ def run_attribution(
         timestamp = event.timestamp
         if snapshot.ready and timestamp in weights_at and timestamp in returns_at:
             asset_returns = {
-                t: c / last_close[t] - 1.0 for t, c in closes.items() if t in last_close
+                t: math.log(c / last_close[t]) for t, c in closes.items() if t in last_close
             }
             leg_weights = weights_at[timestamp]
             w = np.array([leg_weights.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
@@ -87,7 +93,7 @@ def run_attribution(
             portfolio_return = returns_at[timestamp]
             index.append(timestamp)
             exposures.append(dict(zip(snapshot.factors, x.tolist(), strict=True)))
-            shares.append(snapshot.risk_decomposition(w))
+            decomposition.append(snapshot.risk_decomposition(w))
             contributions.append(
                 dict(zip(snapshot.factors, explained.tolist(), strict=True))
                 | {RESIDUAL: portfolio_return - float(explained.sum())}
@@ -104,7 +110,7 @@ def run_attribution(
         contribution_frame = contribution_frame[ordered]
     return AttributionResult(
         exposures=pd.DataFrame(exposures, index=dates).fillna(0.0),
-        risk_shares=pd.DataFrame(shares, index=dates).fillna(0.0),
+        risk_decomposition=pd.DataFrame(decomposition, index=dates).fillna(0.0),
         contributions=contribution_frame,
         portfolio_returns=pd.Series(portfolio, index=dates, dtype=float),
         predicted_vol=pd.Series(predicted, index=dates, dtype=float),
@@ -124,13 +130,21 @@ def attribute_backtest(
     trackers: Mapping[str, PerformanceTracker],
 ) -> dict[str, AttributionResult]:
     """Replay the causal model over the backtest's price data once per leg.
-    The replay gives the same snapshots a live run would."""
+    The replay gives the same snapshots a live run would.
+
+    The model's own ticker universe is ``tickers`` (so every actual holding
+    gets a slot in ``w``, see ``RiskModelSnapshot.exposures``) unioned with
+    every ticker the factor definitions reference (so a factor exists
+    whenever its ETFs have price data, not only when the backtest happens to
+    trade them)."""
+    definitions = load_factors(Path(model_config.factors_file), granular=model_config.granular)
+    universe = tuple(dict.fromkeys((*tickers, *factor_tickers(definitions))))
     return {
         label: run_attribution(
-            iter_market_events(data, tickers),
+            iter_market_events(data, universe),
             tracker.weights_history,
             tracker.mark_to_market_history,
-            FactorRiskModel(tickers, model_config),
+            FactorRiskModel(universe, model_config),
         )
         for label, tracker in trackers.items()
     }
