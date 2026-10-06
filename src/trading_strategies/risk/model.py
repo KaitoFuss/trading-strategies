@@ -258,12 +258,14 @@ class FactorRiskModel:
         g: FloatArray,
     ) -> tuple[FloatArray, FloatArray, FloatArray, list[str], FloatArray | None]:
         """Appends the momentum factor to ``(B, F, g, names)`` once its
-        variance is warm. Momentum needs no explicit ``residualize()`` step
-        to be orthogonal to the macro factors: its factor return is a
-        cross-sectional combination of macro *residual* returns (see
+        variance is warm. The factor *return* needs no residualization: it is
+        a cross-sectional combination of macro *residual* returns (see
         ``RiskModelSnapshot._momentum_return``), and those residuals are
-        already orthogonal to the macro factor returns because
-        ``macro_betas`` is the OLS projection computed by ``_regress``."""
+        orthogonal to the macro factor returns by construction, which keeps
+        ``F`` block-diagonal. The *exposure* column does need residualization:
+        the characteristic itself carries macro content (on real data,
+        corr = -0.53 with Credit beta), so the next line residualizes it
+        against ``macro_betas``."""
         momentum = self._momentum_exposure(tickers, sigma)
         if momentum is not None:
             momentum = residualize_exposure(momentum, macro_betas)
