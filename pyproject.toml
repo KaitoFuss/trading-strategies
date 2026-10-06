@@ -10,6 +10,7 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "backtester",
+    "cvxpy>=1.9.3",
     "matplotlib>=3.11.0",
     "numpy>=2.5.0",
     "pandas>=3.0.3",
@@ -79,6 +80,11 @@ disallow_untyped_defs = false
 [[tool.mypy.overrides]]
 module = "yfinance.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "cvxpy.*"
+ignore_missing_imports = true
+follow_imports = "skip"
 
 [tool.pytest.ini_options]
 addopts = "--cov=trading_strategies --cov-report=term-missing --cov-fail-under=95"
