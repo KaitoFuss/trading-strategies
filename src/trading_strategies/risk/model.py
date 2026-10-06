@@ -128,6 +128,29 @@ def cap_common(b: FloatArray, f: FloatArray, s_ii: FloatArray) -> tuple[FloatArr
     return capped, np.einsum("ik,kl,il->i", capped, f, capped)
 
 
+def residualize_exposure(exposure: FloatArray, betas: FloatArray) -> FloatArray | None:
+    """Cross-sectional OLS residual of a style exposure on the macro betas,
+    re-standardized to unit standard deviation. ``None`` when nothing is left.
+
+    Barra-style: the characteristic itself carries macro content (high-momentum
+    names were, on real data, systematically low-credit-beta and
+    high-FX-beta), which makes ``B``'s columns near-collinear. The optimizer
+    answers collinear columns with large offsetting positions, and a bound on
+    the momentum exposure would silently bind on credit. The regression carries
+    an intercept, so the residual is uncorrelated with the betas and not merely
+    orthogonal to them."""
+    design = np.column_stack([np.ones(len(exposure)), betas])
+    coefficients, *_ = np.linalg.lstsq(design, exposure, rcond=None)
+    residual = exposure - design @ coefficients
+    std = float(residual.std())
+    # Relative floor: an exposure that is an exact linear function of the betas
+    # leaves a residual at float noise (~1e-16 for values of order 1), which an
+    # absolute 1e-18 epsilon would wrongly treat as real dispersion.
+    if std <= max(_VARIANCE_EPS, 1e-12 * float(np.abs(exposure).max())):
+        return None
+    return residual / std
+
+
 class FactorRiskModel:
     def __init__(self, tickers: Sequence[Ticker], config: FactorModelConfig) -> None:
         self._tickers = tuple(tickers)
@@ -242,6 +265,8 @@ class FactorRiskModel:
         already orthogonal to the macro factor returns because
         ``macro_betas`` is the OLS projection computed by ``_regress``."""
         momentum = self._momentum_exposure(tickers, sigma)
+        if momentum is not None:
+            momentum = residualize_exposure(momentum, macro_betas)
         momentum_std = self._momentum_var.std
         if momentum is None or not momentum_std:
             return macro_betas, f_macro, g, names, momentum

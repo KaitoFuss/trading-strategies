@@ -14,6 +14,7 @@ from trading_strategies.risk.model import (
     FactorRiskModel,
     RiskModelSnapshot,
     cap_common,
+    residualize_exposure,
 )
 from trading_strategies.utils.streaming import FloatArray
 
@@ -257,3 +258,37 @@ def test_capped_model_stays_psd(tmp_path: Path) -> None:
     snapshot = _run(FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path)), path)
 
     assert np.linalg.eigvalsh(snapshot.covariance()).min() > 0
+
+
+def test_residualize_exposure_removes_the_beta_component() -> None:
+    rng = np.random.default_rng(0)
+    betas = rng.normal(0, 1, (40, 2))
+    exposure = 2.0 * betas[:, 0] - 0.5 * betas[:, 1] + rng.normal(0, 0.3, 40)
+
+    residual = residualize_exposure(exposure, betas)
+
+    assert residual is not None
+    assert residual.std() == pytest.approx(1.0)
+    for k in range(betas.shape[1]):
+        assert abs(np.corrcoef(residual, betas[:, k])[0, 1]) < 1e-10
+
+
+def test_residualize_exposure_returns_none_without_dispersion() -> None:
+    betas = np.array([[1.0], [2.0], [3.0]])
+    exposure = np.array([2.0, 4.0, 6.0])  # exactly 2x the beta -> nothing left
+
+    assert residualize_exposure(exposure, betas) is None
+
+
+def test_momentum_exposure_is_orthogonal_to_the_macro_betas(tmp_path: Path) -> None:
+    """The spike measured corr(momentum exposure, Credit beta) = -0.53 on real
+    data; near-collinear B columns make the optimizer build large offsetting
+    positions."""
+    path = _simulate(400, {"A": 0.5, "B": -1.0, "C": 0.2, "D": 0.8})
+    snapshot = _run(
+        FactorRiskModel(["MKT", "A", "B", "C", "D"], market_factor_config(tmp_path)), path
+    )
+
+    assert snapshot.momentum is not None
+    for k in range(snapshot.macro_betas.shape[1]):
+        assert abs(np.corrcoef(snapshot.momentum, snapshot.macro_betas[:, k])[0, 1]) < 0.05
