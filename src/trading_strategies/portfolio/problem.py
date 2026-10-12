@@ -64,15 +64,19 @@ def solve_weights(
     f_half = vectors * np.sqrt(np.clip(values, 0.0, None))
 
     w = cp.Variable(len(snapshot.tickers))
-    risk = cp.norm(cp.hstack([f_half.T @ (snapshot.B.T @ w), cp.multiply(np.sqrt(snapshot.D), w)]))
-    constraints = [risk <= target_daily, cp.norm1(w) <= params.max_gross]
+    risk = cp.norm(  # type: ignore[attr-defined]
+        cp.hstack(  # type: ignore[attr-defined]
+            [f_half.T @ (snapshot.B.T @ w), cp.multiply(np.sqrt(snapshot.D), w)]  # type: ignore[attr-defined]
+        )
+    )
+    constraints = [risk <= target_daily, cp.norm1(w) <= params.max_gross]  # type: ignore[attr-defined]
     for name, (low, high) in params.factor_bounds.items():
         exposure = snapshot.B[:, snapshot.factors.index(name)] @ w
         constraints += [exposure >= low, exposure <= high]
 
-    objective = cp.Maximize(alpha @ w - kappa * cp.norm1(w - w_prev))
+    objective = cp.Maximize(alpha @ w - kappa * cp.norm1(w - w_prev))  # type: ignore[attr-defined]
     problem = cp.Problem(objective, constraints)
-    problem.solve(solver=cp.CLARABEL)
+    problem.solve(solver=cp.CLARABEL)  # type: ignore[no-untyped-call]
 
     if w.value is None:
         return SolveResult(w_prev, str(problem.status), "none", 0.0, float(np.abs(w_prev).sum()))

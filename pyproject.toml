@@ -84,7 +84,6 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "cvxpy.*"
 ignore_missing_imports = true
-follow_imports = "skip"
 
 [tool.pytest.ini_options]
 addopts = "--cov=trading_strategies --cov-report=term-missing --cov-fail-under=95"
