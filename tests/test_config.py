@@ -42,7 +42,7 @@ def test_from_json_loads_shipped_config() -> None:
     assert config.target_vol == 0.15
     assert config.cost_bps == 0.0
     assert config.commission_bps == 0.0
-    assert config.rescale_to_portfolio_vol is False
+    assert config.portfolio == "target_vol"
 
 
 def test_from_json_loads_shipped_rescaled_config() -> None:
@@ -51,12 +51,12 @@ def test_from_json_loads_shipped_rescaled_config() -> None:
 
     assert len(config.tickers) == 60
     assert config.target_vol == 0.15
-    assert config.rescale_to_portfolio_vol is True
+    assert config.portfolio == "rescaled_target_vol"
 
 
-def test_rescale_to_portfolio_vol_defaults_to_false() -> None:
+def test_portfolio_defaults_to_target_vol() -> None:
     config = MacdBacktestConfig(name="MACD Benchmark", data="data/raw.parquet", tickers=["SPY"])
-    assert config.rescale_to_portfolio_vol is False
+    assert config.portfolio == "target_vol"
 
 
 def test_from_json_raises_value_error_on_invalid_config(tmp_path: Path) -> None:
@@ -70,6 +70,40 @@ def test_from_json_raises_value_error_on_invalid_config(tmp_path: Path) -> None:
     path.write_text(json.dumps(payload))
 
     with pytest.raises(ValueError, match=str(path)):
+        MacdBacktestConfig.from_json(path)
+
+
+def test_portfolio_field_parses_and_defaults(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized",'
+        ' "factor_model": {"factors_file": "f.json"},'
+        ' "optimizer": {"ic": 0.1, "factor_bounds": {"Equity": [-0.2, 0.2]}}}'
+    )
+
+    config = MacdBacktestConfig.from_json(path)
+
+    assert config.portfolio == "optimized"
+    assert config.optimizer is not None
+    assert config.optimizer.ic == 0.1
+    assert config.optimizer.factor_bounds == {"Equity": (-0.2, 0.2)}
+
+
+def test_unknown_portfolio_value_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text('{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "bogus"}')
+
+    with pytest.raises(ValueError, match="portfolio"):
+        MacdBacktestConfig.from_json(path)
+
+
+def test_optimized_requires_a_factor_model(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized"}'
+    )
+
+    with pytest.raises(ValueError, match="factor_model"):
         MacdBacktestConfig.from_json(path)
 
 

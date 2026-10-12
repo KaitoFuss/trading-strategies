@@ -15,9 +15,12 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
-from trading_strategies.risk.config import FactorModelConfig
+from trading_strategies.risk.config import FactorModelConfig, OptimizerConfig
+
+PortfolioKind = Literal["target_vol", "rescaled_target_vol", "optimized"]
+_PORTFOLIO_KINDS: frozenset[str] = frozenset({"target_vol", "rescaled_target_vol", "optimized"})
 
 
 @dataclass(frozen=True)
@@ -26,7 +29,8 @@ class MacdBacktestConfig:
     data: str
     tickers: list[str]
     target_vol: float = 0.15
-    rescale_to_portfolio_vol: bool = False
+    portfolio: PortfolioKind = "target_vol"
+    optimizer: OptimizerConfig | None = None
     initial_cash: float = 100_000.0
     max_gross: float = 1.0
     cost_bps: float = 0.0
@@ -41,6 +45,16 @@ class MacdBacktestConfig:
             raw = json.loads(path.read_text())
             if "factor_model" in raw:
                 raw["factor_model"] = FactorModelConfig.from_dict(raw["factor_model"])
-            return cls(**raw)
+            if "optimizer" in raw:
+                raw["optimizer"] = OptimizerConfig.from_dict(raw["optimizer"])
+            kind = raw.get("portfolio", "target_vol")
+            if kind not in _PORTFOLIO_KINDS:
+                raise ValueError(
+                    f"portfolio must be one of {sorted(_PORTFOLIO_KINDS)}, got {kind!r}"
+                )
+            config = cls(**raw)
+            if config.portfolio == "optimized" and config.factor_model is None:
+                raise ValueError("portfolio='optimized' requires a factor_model section")
+            return config
         except (json.JSONDecodeError, TypeError) as error:
             raise ValueError(f"invalid config at {path}: {error}") from error
