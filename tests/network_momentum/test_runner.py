@@ -33,7 +33,7 @@ def config(tmp_path: Path) -> MacdBacktestConfig:
 
 
 def test_run_macd_benchmark_returns_both_legs(config: MacdBacktestConfig) -> None:
-    trackers = run_macd_benchmark(config)
+    trackers, _ = run_macd_benchmark(config)
 
     assert set(trackers) == {"MACD Benchmark", "Buy & Hold"}
     for tracker in trackers.values():
@@ -96,7 +96,7 @@ def test_run_macd_benchmark_both_legs_actually_trade(config: MacdBacktestConfig)
     final-vs-initial equity for the whole run would mean the strategy never
     actually traded, which is the wiring bug this test exists to catch
     (e.g. wrong price source, tickers never reaching the portfolio)."""
-    trackers = run_macd_benchmark(config)
+    trackers, _ = run_macd_benchmark(config)
 
     for label, tracker in trackers.items():
         final_equity = tracker.mark_to_market_history[-1][1]

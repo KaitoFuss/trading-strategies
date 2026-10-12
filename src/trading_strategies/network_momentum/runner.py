@@ -26,7 +26,9 @@ from trading_strategies.portfolio.optimized import OptimizedPortfolio
 from trading_strategies.risk.config import OptimizerConfig
 
 
-def run_macd_benchmark(config: MacdBacktestConfig) -> dict[str, PerformanceTracker]:
+def run_macd_benchmark(
+    config: MacdBacktestConfig,
+) -> tuple[dict[str, PerformanceTracker], Portfolio]:
     """The MACD benchmark strategy leg under ``config``, plus a fixed
     equal-weight buy-and-hold reference. Both legs pay the same trading
     costs (``config.cost_bps`` / ``config.commission_bps``) so the
@@ -41,12 +43,18 @@ def run_macd_benchmark(config: MacdBacktestConfig) -> dict[str, PerformanceTrack
     a final rescale so the book's *own* realized vol tracks ``target_vol``,
     ``"rescaled_target_vol"``), or ``OptimizedPortfolio`` (a constrained
     optimizer over the factor risk model, ``"optimized"``).
+
+    Returns the trackers for both legs, plus the strategy leg's own
+    portfolio instance (so callers can inspect e.g. ``OptimizedPortfolio``'s
+    ``solve_log``).
     """
+
+    built: list[Portfolio] = []
 
     def build(price_source: PriceSource) -> Portfolio:
         if config.portfolio == "optimized":
             assert config.factor_model is not None  # enforced by MacdBacktestConfig
-            return OptimizedPortfolio(
+            portfolio: Portfolio = OptimizedPortfolio(
                 price_source=price_source,
                 initial_cash=config.initial_cash,
                 target_vol=config.target_vol,
@@ -55,17 +63,20 @@ def run_macd_benchmark(config: MacdBacktestConfig) -> dict[str, PerformanceTrack
                 optimizer_config=config.optimizer or OptimizerConfig(),
                 tickers=config.tickers,
             )
-        portfolio_cls = (
-            RescaledTargetVolPortfolio
-            if config.portfolio == "rescaled_target_vol"
-            else TargetVolPortfolio
-        )
-        return portfolio_cls(
-            price_source=price_source,
-            initial_cash=config.initial_cash,
-            target_vol=config.target_vol,
-            max_gross=config.max_gross,
-        )
+        else:
+            portfolio_cls = (
+                RescaledTargetVolPortfolio
+                if config.portfolio == "rescaled_target_vol"
+                else TargetVolPortfolio
+            )
+            portfolio = portfolio_cls(
+                price_source=price_source,
+                initial_cash=config.initial_cash,
+                target_vol=config.target_vol,
+                max_gross=config.max_gross,
+            )
+        built.append(portfolio)
+        return portfolio
 
     strategy_tracker = run_backtest(
         MacdBenchmarkStrategy(),
@@ -81,4 +92,4 @@ def run_macd_benchmark(config: MacdBacktestConfig) -> dict[str, PerformanceTrack
         lambda portfolio: None,
         config,
     )
-    return {"MACD Benchmark": strategy_tracker, "Buy & Hold": benchmark_tracker}
+    return {"MACD Benchmark": strategy_tracker, "Buy & Hold": benchmark_tracker}, built[0]

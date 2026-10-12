@@ -16,6 +16,8 @@ from backtester.tracker.report import ReportPage, save_report
 
 from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.runner import run_macd_benchmark
+from trading_strategies.portfolio.optimized import OptimizedPortfolio
+from trading_strategies.portfolio.report_pages import optimizer_pages
 from trading_strategies.risk.attribution import attribute_backtest
 from trading_strategies.risk.report_pages import attribution_pages
 
@@ -31,7 +33,7 @@ def main() -> None:
         level=logging.INFO, format="%(asctime)s %(levelname)-8s %(name)s: %(message)s"
     )
 
-    trackers = run_macd_benchmark(config)
+    trackers, strategy_portfolio = run_macd_benchmark(config)
     histories = {label: tracker.mark_to_market_history for label, tracker in trackers.items()}
     metrics = {label: tracker.metrics() for label, tracker in trackers.items()}
     trade_metrics = {label: tracker.trade_metrics() for label, tracker in trackers.items()}
@@ -46,6 +48,15 @@ def main() -> None:
         for label, result in results.items():
             logger.info("%s: factor-model bias statistic %.2f", label, result.bias_statistic())
         extra_pages = attribution_pages(results)
+
+    if isinstance(strategy_portfolio, OptimizedPortfolio):
+        extra_pages.extend(
+            optimizer_pages(
+                strategy_portfolio.solve_log,
+                target_vol=config.target_vol,
+                max_gross=config.max_gross,
+            )
+        )
 
     report_path = save_report(
         Path(config.output_dir),
