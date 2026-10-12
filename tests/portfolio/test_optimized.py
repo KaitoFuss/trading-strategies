@@ -122,7 +122,7 @@ def test_orders_from_targets_skips_a_ticker_with_no_price(tmp_path: Path) -> Non
 
 
 def test_keeps_previous_weights_when_the_solver_status_is_not_optimal(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     portfolio, source = _portfolio(tmp_path)
     _drive(portfolio, source, 120)
@@ -137,11 +137,13 @@ def test_keeps_previous_weights_when_the_solver_status_is_not_optimal(
 
     monkeypatch.setattr(optimized_module, "solve_weights", _failing_solve)
 
-    orders = list(
-        portfolio.process_signal(
-            SignalEvent(timestamp=datetime(2020, 1, 1), scores={"A": 1.0, "B": -1.0})
+    with caplog.at_level("WARNING"):
+        orders = list(
+            portfolio.process_signal(
+                SignalEvent(timestamp=datetime(2020, 1, 1), scores={"A": 1.0, "B": -1.0})
+            )
         )
-    )
 
     assert orders == []
     assert portfolio.solve_log[-1].status == "infeasible"
+    assert any("infeasible" in record.message for record in caplog.records)

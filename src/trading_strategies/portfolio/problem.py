@@ -78,7 +78,7 @@ def solve_weights(
     problem = cp.Problem(objective, constraints)
     problem.solve(solver=cp.CLARABEL)  # type: ignore[no-untyped-call]
 
-    if w.value is None:
+    if w.value is None or problem.status != "optimal":
         return SolveResult(w_prev, str(problem.status), "none", 0.0, float(np.abs(w_prev).sum()))
 
     weights = np.asarray(w.value, dtype=np.float64)
