@@ -53,8 +53,11 @@ class MacdBacktestConfig:
                     f"portfolio must be one of {sorted(_PORTFOLIO_KINDS)}, got {kind!r}"
                 )
             config = cls(**raw)
-            if config.portfolio == "optimized" and config.factor_model is None:
-                raise ValueError("portfolio='optimized' requires a factor_model section")
+            if config.portfolio == "optimized":
+                if config.factor_model is None:
+                    raise ValueError("portfolio='optimized' requires a factor_model section")
+                if not config.factor_model.granular:
+                    raise ValueError("portfolio='optimized' requires factor_model.granular=true")
             return config
         except (json.JSONDecodeError, TypeError) as error:
             raise ValueError(f"invalid config at {path}: {error}") from error

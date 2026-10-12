@@ -77,7 +77,7 @@ def test_portfolio_field_parses_and_defaults(tmp_path: Path) -> None:
     path = tmp_path / "c.json"
     path.write_text(
         '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized",'
-        ' "factor_model": {"factors_file": "f.json"},'
+        ' "factor_model": {"factors_file": "f.json", "granular": true},'
         ' "optimizer": {"ic": 0.1, "factor_bounds": {"Equity": [-0.2, 0.2]}}}'
     )
 
@@ -107,11 +107,27 @@ def test_optimized_requires_a_factor_model(tmp_path: Path) -> None:
         MacdBacktestConfig.from_json(path)
 
 
+def test_optimized_requires_granular_factors(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized", '
+        '"factor_model": {"factors_file": "f.json"}}'
+    )
+
+    with pytest.raises(ValueError, match="granular"):
+        MacdBacktestConfig.from_json(path)
+
+
 def test_shipped_configs_hold_the_sixty_ticker_universe() -> None:
     """PFF is deliberately absent: the risk model explains ~92% of its
     variance with Rates/Credit/Equity and the leftover tracks European equity
     markets, so an optimizer would use it as a hedge it cannot be."""
-    for name in ("backtest_macd.json", "backtest_macd_rescaled.json"):
-        config = MacdBacktestConfig.from_json(Path("configs") / name)
+    configs_dir = Path(__file__).parent.parent / "configs"
+    for name in (
+        "backtest_macd.json",
+        "backtest_macd_rescaled.json",
+        "backtest_optimized.json",
+    ):
+        config = MacdBacktestConfig.from_json(configs_dir / name)
         assert len(config.tickers) == 60, name
         assert "PFF" not in config.tickers, name
