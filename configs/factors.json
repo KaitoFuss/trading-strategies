@@ -17,6 +17,8 @@
         {"name": "Energy", "level": 4, "granular": true, "weights": {
             "XLE": 0.5, "OIH": 0.5}},
         {"name": "Precious Metals", "level": 4, "granular": true, "weights": {"GLD": 1.0}},
-        {"name": "Yen", "level": 4, "granular": true, "weights": {"FXY": 1.0}}
+        {"name": "Yen", "level": 4, "granular": true, "weights": {"FXY": 1.0}},
+        {"name": "Commodity FX", "level": 4, "granular": true, "weights": {"FXA": 0.5, "FXC": 0.5}},
+        {"name": "European FX", "level": 4, "granular": true, "weights": {"FXB": 0.5, "FXF": 0.5}}
     ]
 }
