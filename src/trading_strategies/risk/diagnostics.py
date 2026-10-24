@@ -61,7 +61,7 @@ def residual_correlations(
     empirical_cov: FloatArray,
     tickers: Sequence[Ticker],
     *,
-    min_share: float = 0.05,
+    min_share: float = 0.10,
 ) -> ResidualReport:
     """Correlations of ``S - B F B'``.
 
@@ -76,6 +76,16 @@ def residual_correlations(
     assets to mask -- an asset that *is* a factor has ~zero modeled residual,
     and its residual correlations are noise over noise, so it is reported in
     ``masked`` instead of ``correlations``.
+
+    ``min_share`` answers one question: does this asset have enough
+    idiosyncratic variance for a residual correlation to mean anything? A
+    correlation divides by ``sqrt(residual_ii * residual_jj)``, so an asset
+    the factors explain almost fully (UUP *is* the Foreign Currency factor)
+    divides noise by noise and produces an unbounded value. The old 5%
+    threshold left assets sitting just above the line (FXE at 5-6% share)
+    producing correlations above 2 in magnitude. 10% puts those boundary
+    assets in ``masked`` instead, where they are reported as a name plus a
+    share rather than as a meaningless correlation.
 
     A residual correlation above 1 in magnitude is possible, and
     informative, not a bug: it means ``D`` is too small to be consistent

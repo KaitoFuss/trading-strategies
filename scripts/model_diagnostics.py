@@ -17,7 +17,9 @@ wants a factor or a universe change. Momentum's correlation with the macro
 factor returns near zero justifies the block-diagonal ``F``. A |rho| above 1
 is possible and just means ``D`` is too small for the observed
 cross-covariance -- that is informative, not a bug. Masked assets are the
-factor-defining ETFs.
+ones whose modeled residual share is at most 10% of their own variance --
+mostly factor-defining ETFs, plus a few boundary assets a correlation
+would otherwise report as noise over noise.
 """
 
 from __future__ import annotations
@@ -72,7 +74,7 @@ def main() -> None:
         )
     logger.info("worst pairs:\n%s", report.worst_pairs().round(2).to_string())
     logger.info(
-        "masked (residual share <= 5%%): %s",
+        "masked (residual share <= 10%%): %s",
         ", ".join(f"{t} {report.share[t]:.1%}" for t in report.masked),
     )
 
