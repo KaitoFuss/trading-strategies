@@ -6,7 +6,12 @@ import cvxpy as cp
 import numpy as np
 import pytest
 
-from trading_strategies.portfolio.solver import OptimizerParams, _binding_constraint, solve_weights
+from trading_strategies.portfolio.solver import (
+    OptimizerParams,
+    _binding_constraint,
+    shrunk_covariance,
+    solve_weights,
+)
 from trading_strategies.risk.model import RiskModelSnapshot
 
 
@@ -165,3 +170,36 @@ def test_binding_constraint_reports_both_when_vol_and_leverage_tie() -> None:
     params = OptimizerParams(target_vol=0.10, max_gross=1.0)
 
     assert _binding_constraint(vol=0.10, gross=1.0, params=params) == "both"
+
+
+def test_shrinkage_of_zero_is_the_identity_transform() -> None:
+    total = np.array([[4.0, 1.0], [1.0, 9.0]])
+
+    np.testing.assert_allclose(shrunk_covariance(total, 0.0), total)
+
+
+def test_shrinkage_of_one_keeps_only_the_diagonal() -> None:
+    total = np.array([[4.0, 1.0], [1.0, 9.0]])
+
+    np.testing.assert_allclose(shrunk_covariance(total, 1.0), np.diag([4.0, 9.0]))
+
+
+def test_shrinkage_scales_the_off_diagonal_and_preserves_variances() -> None:
+    total = np.array([[4.0, 1.0], [1.0, 9.0]])
+
+    result = shrunk_covariance(total, 0.25)
+
+    np.testing.assert_allclose(np.diag(result), [4.0, 9.0])
+    assert result[0, 1] == pytest.approx(0.75)
+    assert result[1, 0] == pytest.approx(0.75)
+
+
+def test_shrinkage_keeps_the_matrix_psd() -> None:
+    """A convex combination of two PSD matrices is PSD; this pins it against a
+    future rewrite that scales the whole matrix instead of the off-diagonal."""
+    rng = np.random.default_rng(0)
+    factor = rng.normal(0, 1, (6, 2))
+    total = factor @ factor.T + np.diag(rng.uniform(0.1, 0.5, 6))
+
+    for shrinkage in (0.0, 0.1, 0.5, 0.9, 1.0):
+        assert np.linalg.eigvalsh(shrunk_covariance(total, shrinkage)).min() > -1e-12

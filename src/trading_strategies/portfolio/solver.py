@@ -123,3 +123,21 @@ def _binding_constraint(vol: float, gross: float, params: OptimizerParams) -> st
     if at_gross:
         return "leverage"
     return "turnover"
+
+
+def shrunk_covariance(total: FloatArray, shrinkage: float) -> FloatArray:
+    """Blend ``total`` toward its own diagonal: ``(1-d) * total + d * diag(total)``.
+
+    Each asset's variance is preserved exactly and only the covariances shrink,
+    because the covariances are where the estimation error the optimizer
+    exploits lives. The optimizer sits on the vol boundary and picks the
+    direction where error makes predicted risk smallest, which is why its
+    realized vol overshoots its target (measured: bias 1.137). Shrinking the
+    off-diagonal makes an apparently free hedge look expensive again.
+
+    ``d = 0`` returns ``total`` unchanged; ``d = 1`` ignores every correlation.
+    The result is a convex combination of two PSD matrices, so it stays PSD.
+    """
+    if shrinkage == 0.0:
+        return total
+    return (1.0 - shrinkage) * total + shrinkage * np.diag(np.diag(total))
