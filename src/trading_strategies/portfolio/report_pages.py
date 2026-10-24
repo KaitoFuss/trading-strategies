@@ -62,7 +62,9 @@ def rolling_bias(
     risk than the optimizer predicted, which is what an optimizer does when it
     selects the directions where the covariance estimate is most optimistic.
     Bars with no forecast (a flat book, or a non-optimal solve) are dropped
-    rather than counted as a perfect forecast.
+    rather than counted as a perfect forecast. ``realized_returns`` must already
+    be aligned so that index ``t`` holds the return the forecast at ``t`` is
+    responsible for -- that is, the next bar's return.
     """
     frame = _frame(entries)
     daily_forecast = frame["ex_ante_vol"] / np.sqrt(TRADING_DAYS_PER_YEAR)

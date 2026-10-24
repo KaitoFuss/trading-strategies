@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
 
 from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.runner import run_macd_benchmark
@@ -65,14 +66,24 @@ def main() -> None:
             index=pd.DatetimeIndex([timestamp for timestamp, _ in history]),
             dtype=float,
         )
-        realized = equity.pct_change()
+        # log returns, the model's documented convention (see risk/attribution.py)
+        realized = pd.Series(np.log(equity.to_numpy()), index=equity.index, dtype=float).diff()
         forecast = pd.Series(
-            [entry.ex_ante_vol / np.sqrt(252.0) for entry in portfolio.solve_log],
+            [entry.ex_ante_vol / np.sqrt(TRADING_DAYS_PER_YEAR) for entry in portfolio.solve_log],
             index=pd.DatetimeIndex([entry.timestamp for entry in portfolio.solve_log]),
             dtype=float,
         )
-        frame = pd.DataFrame({"forecast": forecast}).join(realized.rename("realized"), how="inner")
-        per_delta[shrinkage] = frame.dropna()
+        # ``forecast[t]`` is the forecast for the book that earns ``realized[t + 1]``: the
+        # tracker marks equity for bar ``t`` before the solve at ``t`` runs, and that solve
+        # already sees bar ``t``'s close. Scoring a forecast against a return inside its own
+        # estimation window biases the statistic downward under volatility clustering.
+        frame = pd.DataFrame({"forecast": forecast}).join(
+            realized.shift(-1).rename("realized"), how="inner"
+        )
+        frame = frame.dropna()
+        per_delta[shrinkage] = frame
+        if len(frame) < 250:
+            logger.warning("only %d aligned bars for shrinkage=%.2f", len(frame), shrinkage)
 
         gross = float(np.mean([entry.gross for entry in portfolio.solve_log]))
         rows.append(

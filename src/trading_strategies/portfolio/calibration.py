@@ -58,7 +58,8 @@ def fold_table(
     """Expanding-window walk-forward over the sweep's per-bar output.
 
     Each frame in ``per_delta`` holds ``forecast`` and ``realized`` on a
-    DatetimeIndex. For each fold the selection sees only bars before the
+    DatetimeIndex, with ``realized`` already aligned so that index ``t`` holds
+    the return the forecast at ``t`` is responsible for. For each fold the selection sees only bars before the
     calibration boundary, and the reported evaluation bias covers the bars
     between the two boundaries.
     """

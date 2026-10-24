@@ -44,6 +44,31 @@ def test_bias_statistic_is_nan_with_too_few_observations() -> None:
     assert np.isnan(bias_statistic(_series([0.01]), _series([0.005])))
 
 
+def test_bias_statistic_needs_the_next_bars_return() -> None:
+    """A forecast at ``t`` is responsible for the return earned at ``t + 1``.
+
+    The forecast jumps on one bar and the matching large move lands on the bar
+    after it. Pairing both at the same timestamp leaves a huge outlier in the
+    standardized series, so the statistic drifts far from 1.0. The test fails if
+    the ``.shift(-1)`` below is removed.
+    """
+    size = 120
+    jump = 50
+    realized_values = [0.01 * (-1) ** i for i in range(size)]
+    realized_values[jump + 1] = 0.20 * (-1) ** (jump + 1)
+    forecast_values = [0.01] * size
+    forecast_values[jump] = 0.20
+    realized = _series(realized_values)
+    forecast = _series(forecast_values)
+
+    aligned = bias_statistic(forecast, realized.shift(-1))
+    same_timestamp = bias_statistic(forecast, realized)
+
+    assert aligned == pytest.approx(1.0, abs=0.05)
+    assert same_timestamp > 1.8
+    assert abs(aligned - 1.0) < abs(same_timestamp - 1.0)
+
+
 def test_select_shrinkage_prefers_the_smallest_delta_inside_the_band() -> None:
     rows = [
         SweepRow(0.0, 1.14, 0.20, 0.164, 12.0, 1.92),

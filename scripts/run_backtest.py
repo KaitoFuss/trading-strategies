@@ -62,7 +62,8 @@ def main() -> None:
                 strategy_portfolio.solve_log,
                 target_vol=config.target_vol,
                 max_gross=config.max_gross,
-                realized_returns=equity.pct_change().dropna(),
+                # index ``t`` must hold the return the forecast at ``t`` earns, i.e. t+1's.
+                realized_returns=equity.pct_change().shift(-1).dropna(),
             )
         )
 
