@@ -7,6 +7,15 @@ snapshot built from data up to bar t-1:
 - return contributions ``x_k * f_k,t``, plus ``RESIDUAL`` = portfolio return
   minus their sum (specific returns, cash, costs, intraday trading).
 
+``edge_decomposition`` regroups the same return into five buckets that answer
+"what earned it": structural beta (the full-sample mean exposure times each
+macro factor's return -- what a passive holder of the average tilt earns),
+factor timing (the deviation from that mean times the factor return; summed
+over the sample it is ``T * cov(x_k, f_k)``), momentum, asset selection
+(``w'(r - B f)``) and other (the rest of ``RESIDUAL``: log-return aggregation,
+intraday trading, costs). The mean is ex post on purpose: this is a
+description of the backtest, not a trading input.
+
 Contributions sum arithmetically over time; per bar the decomposition is
 exact by construction. Holdings-based rather than a returns regression,
 because a trend strategy's exposures move on purpose."""
@@ -24,13 +33,17 @@ import numpy as np
 import pandas as pd
 from backtester.core.events import MarketEvent, Ticker
 from backtester.data.frame_market_data import FrameMarketData
-from backtester.tracker.metrics import PerformanceTracker
+from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR, PerformanceTracker
 
 from trading_strategies.risk.config import FactorModelConfig
 from trading_strategies.risk.factors import factor_tickers, load_factors
-from trading_strategies.risk.model import FactorRiskModel
+from trading_strategies.risk.model import MOMENTUM, FactorRiskModel
 
 RESIDUAL = "Specific + other"
+STRUCTURAL = "Structural beta"
+TIMING = "Factor timing"
+SELECTION = "Asset selection"
+OTHER = "Other"
 
 
 @dataclass(frozen=True)
@@ -40,6 +53,8 @@ class AttributionResult:
     contributions: pd.DataFrame
     portfolio_returns: pd.Series[float]
     predicted_vol: pd.Series[float]
+    factor_returns: pd.DataFrame
+    specific_returns: pd.Series[float]  # w'(r - B f)
 
     def standardized_returns(self) -> pd.Series[float]:
         live = self.predicted_vol > 0
@@ -51,6 +66,64 @@ class AttributionResult:
 
     def rolling_bias(self, window: int = 250) -> pd.Series[float]:
         return self.standardized_returns().rolling(window, min_periods=window // 2).std()
+
+    def structural_returns(self) -> pd.DataFrame:
+        """Per bar and factor: full-sample mean exposure times the factor return."""
+        return self.factor_returns[self.exposures.columns] * self.exposures.mean()
+
+    def timing_returns(self) -> pd.DataFrame:
+        """Per bar and factor: (exposure - its full-sample mean) times the factor return."""
+        exposures = self.exposures
+        return (exposures - exposures.mean()) * self.factor_returns[exposures.columns]
+
+    def edge_decomposition(self) -> pd.DataFrame:
+        """Five buckets per bar that sum exactly to ``portfolio_returns``.
+        Momentum stays one bucket; ``factor_summary`` shows its own split."""
+        structural = self.structural_returns()
+        timing = self.timing_returns()
+        macro = [c for c in self.exposures.columns if c != MOMENTUM]
+        momentum = (
+            self.contributions[MOMENTUM]
+            if MOMENTUM in self.contributions
+            else pd.Series(0.0, index=self.portfolio_returns.index)
+        )
+        explained = self.contributions.drop(columns=RESIDUAL, errors="ignore").sum(axis=1)
+        return pd.DataFrame(
+            {
+                STRUCTURAL: structural[macro].sum(axis=1),
+                TIMING: timing[macro].sum(axis=1),
+                MOMENTUM: momentum,
+                SELECTION: self.specific_returns,
+                OTHER: self.portfolio_returns - explained - self.specific_returns,
+            },
+            index=self.portfolio_returns.index,
+        )
+
+    def edge_summary(self) -> pd.DataFrame:
+        """Per bucket: annualized mean contribution and its t-stat."""
+        edge = self.edge_decomposition()
+        return pd.DataFrame(
+            {"annualized": edge.mean() * TRADING_DAYS_PER_YEAR, "t_stat": _t_stats(edge)}
+        )
+
+    def factor_summary(self) -> pd.DataFrame:
+        """Per factor: annualized structural and timing contribution, and the
+        t-stat of the timing part."""
+        timing = self.timing_returns()
+        return pd.DataFrame(
+            {
+                "structural": self.structural_returns().mean() * TRADING_DAYS_PER_YEAR,
+                "timing": timing.mean() * TRADING_DAYS_PER_YEAR,
+                "t_timing": _t_stats(timing),
+            }
+        )
+
+
+def _t_stats(frame: pd.DataFrame) -> pd.Series[float]:
+    """``mean / std * sqrt(n)`` per column; 0 for a column with no variation."""
+    std: pd.Series[float] = frame.std()
+    t: pd.Series[float] = frame.mean() / std * math.sqrt(len(frame))
+    return t.where(std > 0, 0.0).fillna(0.0)
 
 
 def run_attribution(
@@ -76,6 +149,8 @@ def run_attribution(
     contributions: list[dict[str, float]] = []
     portfolio: list[float] = []
     predicted: list[float] = []
+    factor_returns: list[dict[str, float]] = []
+    specific: list[float] = []
     last_close: dict[Ticker, float] = {}
 
     for event in events:
@@ -89,7 +164,9 @@ def run_attribution(
             leg_weights = weights_at[timestamp]
             w = np.array([leg_weights.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
             x = snapshot.exposures(w)
-            explained = x * snapshot.factor_returns(asset_returns)
+            f = snapshot.factor_returns(asset_returns)
+            explained = x * f
+            r = np.array([asset_returns.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
             portfolio_return = returns_at[timestamp]
             index.append(timestamp)
             exposures.append(dict(zip(snapshot.factors, x.tolist(), strict=True)))
@@ -100,6 +177,8 @@ def run_attribution(
             )
             portfolio.append(portfolio_return)
             predicted.append(math.sqrt(snapshot.portfolio_variance(w)))
+            factor_returns.append(dict(zip(snapshot.factors, f.tolist(), strict=True)))
+            specific.append(float(w @ np.nan_to_num(r)) - float(explained.sum()))
         last_close.update(closes)
         model.update(closes)
 
@@ -114,6 +193,8 @@ def run_attribution(
         contributions=contribution_frame,
         portfolio_returns=pd.Series(portfolio, index=dates, dtype=float),
         predicted_vol=pd.Series(predicted, index=dates, dtype=float),
+        factor_returns=pd.DataFrame(factor_returns, index=dates).fillna(0.0),
+        specific_returns=pd.Series(specific, index=dates, dtype=float),
     )
 
 

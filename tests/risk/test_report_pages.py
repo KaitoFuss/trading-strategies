@@ -39,6 +39,8 @@ def _result(n: int = 300) -> AttributionResult:
         ),
         portfolio_returns=returns,
         predicted_vol=pd.Series(0.01, index=dates),
+        factor_returns=pd.DataFrame({"Equity": returns, "Momentum": returns * 0.3}, index=dates),
+        specific_returns=returns * 0.15,
     )
 
 
@@ -50,16 +52,18 @@ def _empty() -> AttributionResult:
         contributions=pd.DataFrame(index=dates),
         portfolio_returns=pd.Series(dtype=float, index=dates),
         predicted_vol=pd.Series(dtype=float, index=dates),
+        factor_returns=pd.DataFrame(index=dates),
+        specific_returns=pd.Series(dtype=float, index=dates),
     )
 
 
-def test_four_pages_render_for_two_legs() -> None:
+def test_six_pages_render_for_two_legs() -> None:
     pdf = _CountingPdf()
 
     for page in attribution_pages({"Strategy": _result(), "Buy & Hold": _result()}):
         page.render(cast(PdfPages, pdf))
 
-    assert pdf.pages == 4
+    assert pdf.pages == 6
 
 
 def test_empty_legs_are_skipped_and_all_empty_writes_nothing() -> None:
