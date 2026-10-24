@@ -16,9 +16,9 @@ from trading_strategies.risk.factors import (
 REPO_FACTORS = Path(__file__).resolve().parents[2] / "configs" / "factors.json"
 
 
-def test_repo_factor_file_has_eight_macro_and_seven_granular() -> None:
+def test_repo_factor_file_has_eight_macro_and_nine_granular() -> None:
     assert len(load_factors(REPO_FACTORS, granular=False)) == 8
-    assert len(load_factors(REPO_FACTORS, granular=True)) == 15
+    assert len(load_factors(REPO_FACTORS, granular=True)) == 17
 
 
 def test_factors_are_sorted_by_level_stably(tmp_path: Path) -> None:

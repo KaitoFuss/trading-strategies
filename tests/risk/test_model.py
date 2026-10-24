@@ -120,7 +120,7 @@ def test_macro_factor_returns_are_residualized_portfolio_returns(tmp_path: Path)
     )
 
 
-@pytest.mark.parametrize(("granular", "expected"), [(False, 9), (True, 16)])
+@pytest.mark.parametrize(("granular", "expected"), [(False, 9), (True, 18)])
 def test_granular_toggle_changes_factor_count(
     tmp_path: Path, granular: bool, expected: int
 ) -> None:
