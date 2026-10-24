@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from trading_strategies.config import MacdBacktestConfig
-from trading_strategies.risk.config import FactorModelConfig, MomentumConfig
+from trading_strategies.risk.config import FactorModelConfig, MomentumConfig, OptimizerConfig
 
 
 def test_from_dict_applies_defaults() -> None:
@@ -50,3 +50,36 @@ def test_backtest_config_rejects_unknown_factor_model_field(tmp_path: Path) -> N
         MacdBacktestConfig.from_json(
             _write(tmp_path / "c.json", {"factor_model": {"factors_file": "f.json", "bogus": 1}})
         )
+
+
+def test_optimizer_objective_defaults_to_linear() -> None:
+    config = OptimizerConfig.from_dict({})
+
+    assert config.objective == "linear"
+    assert config.risk_aversion is None
+    assert config.vol_cap is None
+
+
+def test_optimizer_parses_mean_variance() -> None:
+    config = OptimizerConfig.from_dict(
+        {"objective": "mean_variance", "risk_aversion": 30.0, "vol_cap": 0.25}
+    )
+
+    assert config.objective == "mean_variance"
+    assert config.risk_aversion == 30.0
+    assert config.vol_cap == 0.25
+
+
+@pytest.mark.parametrize(
+    ("raw", "message"),
+    [
+        ({"objective": "quadratic"}, "objective"),
+        ({"objective": "mean_variance", "vol_cap": 0.25}, "risk_aversion"),
+        ({"objective": "mean_variance", "risk_aversion": 0.0, "vol_cap": 0.25}, "risk_aversion"),
+        ({"objective": "mean_variance", "risk_aversion": 30.0}, "vol_cap"),
+        ({"objective": "mean_variance", "risk_aversion": 30.0, "vol_cap": -0.1}, "vol_cap"),
+    ],
+)
+def test_invalid_mean_variance_settings_are_rejected(raw: dict[str, object], message: str) -> None:
+    with pytest.raises(ValueError, match=message):
+        OptimizerConfig.from_dict(raw)
