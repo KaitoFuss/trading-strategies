@@ -10,9 +10,12 @@ from tests.synthetic_data import write_synthetic_parquet
 from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.portfolio import RescaledTargetVolPortfolio
 from trading_strategies.network_momentum.runner import run_macd_benchmark
+from trading_strategies.portfolio.optimized_portfolio import OptimizedPortfolio
+from trading_strategies.risk.config import FactorModelConfig
 
 _TICKERS = ("SPY", "QQQ", "TLT")
 _NUM_BARS = 500
+_REPO_FACTORS = Path(__file__).resolve().parents[2] / "configs" / "factors.json"
 
 
 @pytest.fixture
@@ -30,7 +33,7 @@ def config(tmp_path: Path) -> MacdBacktestConfig:
 
 
 def test_run_macd_benchmark_returns_both_legs(config: MacdBacktestConfig) -> None:
-    trackers = run_macd_benchmark(config)
+    trackers, _ = run_macd_benchmark(config)
 
     assert set(trackers) == {"MACD Benchmark", "Buy & Hold"}
     for tracker in trackers.values():
@@ -56,10 +59,35 @@ def test_run_macd_benchmark_uses_rescaled_portfolio_when_configured(
 
     monkeypatch.setattr(RescaledTargetVolPortfolio, "__init__", _spy_init)
 
-    rescaled_config = replace(config, rescale_to_portfolio_vol=True)
+    rescaled_config = replace(config, portfolio="rescaled_target_vol")
     run_macd_benchmark(rescaled_config)
 
     assert seen == [RescaledTargetVolPortfolio]
+
+
+def test_run_macd_benchmark_uses_optimized_portfolio_when_configured(
+    config: MacdBacktestConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``portfolio="optimized"`` must route through ``OptimizedPortfolio``,
+    which also needs a ``factor_model`` to build its risk model."""
+    seen: list[type] = []
+    original_init = OptimizedPortfolio.__init__
+
+    def _spy_init(self: OptimizedPortfolio, *args: object, **kwargs: object) -> None:
+        seen.append(type(self))
+        original_init(self, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(OptimizedPortfolio, "__init__", _spy_init)
+
+    optimized_config = replace(
+        config,
+        portfolio="optimized",
+        max_gross=2.0,
+        factor_model=FactorModelConfig(factors_file=str(_REPO_FACTORS)),
+    )
+    run_macd_benchmark(optimized_config)
+
+    assert seen == [OptimizedPortfolio]
 
 
 def test_run_macd_benchmark_both_legs_actually_trade(config: MacdBacktestConfig) -> None:
@@ -68,7 +96,7 @@ def test_run_macd_benchmark_both_legs_actually_trade(config: MacdBacktestConfig)
     final-vs-initial equity for the whole run would mean the strategy never
     actually traded, which is the wiring bug this test exists to catch
     (e.g. wrong price source, tickers never reaching the portfolio)."""
-    trackers = run_macd_benchmark(config)
+    trackers, _ = run_macd_benchmark(config)
 
     for label, tracker in trackers.items():
         final_equity = tracker.mark_to_market_history[-1][1]

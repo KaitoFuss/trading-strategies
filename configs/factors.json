@@ -15,7 +15,7 @@
             "XLP": -0.3333333333, "XLU": -0.3333333333, "XLV": -0.3333333334}},
         {"name": "Curve", "level": 4, "granular": true, "weights": {"TLT": 1.0, "SHY": -1.0}},
         {"name": "Energy", "level": 4, "granular": true, "weights": {
-            "XLE": 0.3333333333, "OIH": 0.3333333333, "USO": 0.3333333334}},
+            "XLE": 0.5, "OIH": 0.5}},
         {"name": "Precious Metals", "level": 4, "granular": true, "weights": {"GLD": 1.0}},
         {"name": "Yen", "level": 4, "granular": true, "weights": {"FXY": 1.0}}
     ]

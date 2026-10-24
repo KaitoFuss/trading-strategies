@@ -105,6 +105,59 @@ class RiskModelSnapshot:
         return float(self.momentum @ macro_residual) / denom if denom > 0 else 0.0
 
 
+def cap_common(b: FloatArray, f: FloatArray, s_ii: FloatArray) -> tuple[FloatArray, FloatArray]:
+    """Scale down any row of ``b`` whose factor variance exceeds the asset's
+    own variance, so ``common_i <= s_ii_i`` everywhere.
+
+    A factor-defining ETF (UUP is the Foreign Currency factor, SHY sits inside
+    Rates/Curve) is already ~fully explained by the macro block; the momentum
+    column then adds variance on top, and the floored ``D`` adds 10% more. The
+    diagnostics spike measured the result at up to 37% too much variance for
+    UUP, which makes ``Sigma`` overstate exactly the cheapest hedging
+    instruments and leaves the residual matrix non-PSD. Scaling the row (rather
+    than only flooring ``D``) also shrinks that asset's modelled covariances,
+    which is the conservative, self-consistent choice: the model claimed more
+    covariance than the data supports."""
+    common = np.einsum("ik,kl,il->i", b, f, b)
+    over = common > s_ii
+    if not over.any():
+        return b, common
+    scale = np.ones_like(common)
+    scale[over] = np.sqrt(s_ii[over] / common[over])
+    capped = b * scale[:, None]
+    return capped, np.einsum("ik,kl,il->i", capped, f, capped)
+
+
+def residualize_exposure(exposure: FloatArray, betas: FloatArray) -> FloatArray | None:
+    """Cross-sectional OLS residual of a style exposure on the macro betas,
+    re-standardized to unit standard deviation. ``None`` when nothing is left.
+
+    Barra-style: the characteristic itself carries macro content (high-momentum
+    names were, on real data, systematically low-credit-beta and
+    high-FX-beta), which makes ``B``'s columns near-collinear. The optimizer
+    answers collinear columns with large offsetting positions, and a bound on
+    the momentum exposure would silently bind on credit. The regression carries
+    an intercept, so the residual is uncorrelated with the betas and not merely
+    orthogonal to them."""
+    design = np.column_stack([np.ones(len(exposure)), betas])
+    coefficients, *_ = np.linalg.lstsq(design, exposure, rcond=None)
+    residual = exposure - design @ coefficients
+    std = float(residual.std())
+    # Relative floor: an exposure that is an exact linear function of the betas
+    # leaves a residual at float noise (~1e-16 for values of order 1), which an
+    # absolute 1e-18 epsilon would wrongly treat as real dispersion. This is not
+    # a corner case: it happens whenever there are fewer assets than active
+    # factors, which is exactly the 3-ticker integration test, where the
+    # momentum characteristic is an exact linear function of the macro betas.
+    # An absolute epsilon would z-score that noise and feed meaningless
+    # exposures into B. The relative floor instead returns None, so momentum
+    # simply does not join F that bar.
+    # test_residualize_exposure_returns_none_without_dispersion pins this.
+    if std <= max(_VARIANCE_EPS, 1e-12 * float(np.abs(exposure).max())):
+        return None
+    return residual / std
+
+
 class FactorRiskModel:
     def __init__(self, tickers: Sequence[Ticker], config: FactorModelConfig) -> None:
         self._tickers = tuple(tickers)
@@ -212,13 +265,17 @@ class FactorRiskModel:
         g: FloatArray,
     ) -> tuple[FloatArray, FloatArray, FloatArray, list[str], FloatArray | None]:
         """Appends the momentum factor to ``(B, F, g, names)`` once its
-        variance is warm. Momentum needs no explicit ``residualize()`` step
-        to be orthogonal to the macro factors: its factor return is a
-        cross-sectional combination of macro *residual* returns (see
+        variance is warm. The factor *return* needs no residualization: it is
+        a cross-sectional combination of macro *residual* returns (see
         ``RiskModelSnapshot._momentum_return``), and those residuals are
-        already orthogonal to the macro factor returns because
-        ``macro_betas`` is the OLS projection computed by ``_regress``."""
+        orthogonal to the macro factor returns by construction, which keeps
+        ``F`` block-diagonal. The *exposure* column does need residualization:
+        the characteristic itself carries macro content (on real data,
+        corr = -0.53 with Credit beta), so the next line residualizes it
+        against ``macro_betas``."""
         momentum = self._momentum_exposure(tickers, sigma)
+        if momentum is not None:
+            momentum = residualize_exposure(momentum, macro_betas)
         momentum_std = self._momentum_var.std
         if momentum is None or not momentum_std:
             return macro_betas, f_macro, g, names, momentum
@@ -262,7 +319,7 @@ class FactorRiskModel:
         correlations, see the module docstring), and packages the immutable
         ``RiskModelSnapshot``."""
         s_ii = np.diag(s)
-        common = np.einsum("ik,kl,il->i", b, f, b)
+        b, common = cap_common(b, f, s_ii)
         specific = np.maximum(self._config.residual_floor * s_ii, s_ii - common)
         scale = sigma / np.sqrt(s_ii)
         # Sigma = diag(scale) (b f b^T + D) diag(scale), split so that F has

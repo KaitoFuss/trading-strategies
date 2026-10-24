@@ -9,6 +9,7 @@
         "UNG", "DBA", "UUP", "FXE", "FXB", "FXY", "FXA", "FXC", "FXF"
     ],
     "target_vol": 0.15,
+    "portfolio": "target_vol",
     "initial_cash": 1000000.0,
     "max_gross": 1.0,
     "cost_bps": 0.0,

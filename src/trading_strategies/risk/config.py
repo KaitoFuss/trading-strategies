@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Self
 
@@ -27,3 +28,19 @@ class FactorModelConfig:
         fields = dict(raw)
         momentum = MomentumConfig(**fields.pop("momentum", {}))
         return cls(momentum=momentum, **fields)
+
+
+@dataclass(frozen=True)
+class OptimizerConfig:
+    information_coefficient: float = 0.05
+    turnover_penalty_bps: float = 5.0
+    factor_bounds: Mapping[str, tuple[float, float]] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, Any]) -> Self:
+        fields = dict(raw)
+        bounds = {
+            name: (float(low), float(high))
+            for name, (low, high) in fields.pop("factor_bounds", {}).items()
+        }
+        return cls(factor_bounds=bounds, **fields)

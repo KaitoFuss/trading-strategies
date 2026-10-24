@@ -32,7 +32,7 @@ def test_backtest_report_includes_factor_attribution(tmp_path: Path) -> None:
     )
     assert config.factor_model is not None
 
-    trackers = run_macd_benchmark(config)
+    trackers, _ = run_macd_benchmark(config)
     results = attribute_backtest(Path(config.data), config.tickers, config.factor_model, trackers)
 
     buy_and_hold = results["Buy & Hold"]
@@ -68,7 +68,7 @@ def test_weights_history_earns_the_marked_return(tmp_path: Path) -> None:
     raw = pd.read_parquet(data).pivot(index="date", columns="ticker", values="close")
     closes = raw.to_dict(orient="index")  # pd.Timestamp keys hash like datetime
 
-    trackers = run_macd_benchmark(config)
+    trackers, _ = run_macd_benchmark(config)
 
     for label, tracker in trackers.items():
         weights = dict(tracker.weights_history)

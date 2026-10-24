@@ -1,0 +1,33 @@
+{
+    "name": "MACD Optimized",
+    "data": "data/raw.parquet",
+    "tickers": [
+        "SPY", "QQQ", "IWM", "EFA", "EEM", "VGK", "EWJ", "XLF", "XLE", "XLV", "XLY", "XLP", "XLI",
+        "XLB", "XLU", "SMH", "IBB", "KRE", "XHB", "GDX", "OIH", "IYT", "IYR", "EWC", "EWA", "EWU",
+        "EWL", "EWP", "EWI", "EWS", "EWZ", "FXI", "EWY", "EWT", "EWH", "EWW", "EZA", "EWM", "IEF",
+        "TLT", "SHY", "TIP", "LQD", "HYG", "BND", "MBB", "IGIB", "PFF", "GLD", "SLV", "DBC", "USO",
+        "UNG", "DBA", "UUP", "FXE", "FXB", "FXY", "FXA", "FXC", "FXF"
+    ],
+    "target_vol": 0.15,
+    "portfolio": "optimized",
+    "initial_cash": 1000000.0,
+    "max_gross": 2.0,
+    "cost_bps": 0.0,
+    "commission_bps": 0.0,
+    "risk_free_rate": 0.0,
+    "output_dir": "output",
+    "factor_model": {
+        "factors_file": "configs/factors.json",
+        "granular": true,
+        "vol_span": 60,
+        "corr_span": 250,
+        "corr_min_periods": 250,
+        "residual_floor": 0.10,
+        "momentum": {"lookback": 252, "skip": 21}
+    },
+    "optimizer": {
+        "information_coefficient": 0.05,
+        "turnover_penalty_bps": 5.0,
+        "factor_bounds": {}
+    }
+}

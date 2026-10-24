@@ -45,7 +45,7 @@ risk the levels above it do not explain.
 | 4 granular | Tech | QQQ - SPY | tech vs. broad market |
 | 4 granular | Cyclical vs Defensive | mean(XLI,XLB,XLY,XLF) - mean(XLP,XLU,XLV) | cyclical vs. defensive sectors |
 | 4 granular | Curve | TLT - SHY | yield-curve steepener/flattener, net of Rates |
-| 4 granular | Energy | mean(XLE,OIH,USO) | energy-specific commodity exposure |
+| 4 granular | Energy | XLE + OIH | energy-specific commodity exposure. USO **stays in the traded universe**; it is only excluded from this factor's membership. A three-member factor forces its members' residuals to sum to zero, which produced a fake OIH/USO residual correlation of -0.89. With two members, USO keeps an honest ~17% idiosyncratic residual whose worst partner is -0.39. |
 | 4 granular | Precious Metals | GLD | gold, net of broad Commodities |
 | 4 granular | Yen | FXY | yen-specific currency risk, net of the broad dollar factor |
 
