@@ -165,6 +165,71 @@ def _draw_returns(left: Axes, right: Axes, label: str, result: AttributionResult
     style_table(right, rows, headers, cellLoc="center", colWidths=_col_widths(rows, headers))
 
 
+def _draw_edge(left: Axes, right: Axes, label: str, result: AttributionResult) -> None:
+    _lines(left, result.edge_decomposition().cumsum(), f"{label} - cumulative edge")
+    left.yaxis.set_major_formatter(PercentFormatter(1.0))
+    headers = ["Bucket", "Annualized", "t-stat"]
+    rows = [
+        [str(name), f"{row['annualized']:+.2%}", f"{row['t_stat']:+.2f}"]
+        for name, row in result.edge_summary().iterrows()
+    ]
+    style_table(right, rows, headers, cellLoc="center", colWidths=_col_widths(rows, headers))
+
+
+def _draw_factor_timing(left: Axes, right: Axes, label: str, result: AttributionResult) -> None:
+    summary = result.factor_summary()
+    names = [str(n) for n in summary.index]
+    positions = range(len(names))
+    height = 0.4
+    left.barh(
+        [p - height / 2 for p in positions],
+        summary["structural"].to_numpy(),
+        height,
+        color=MUTED,
+        label="Structural",
+    )
+    left.barh(
+        [p + height / 2 for p in positions],
+        summary["timing"].to_numpy(),
+        height,
+        color=INK,
+        label="Timing",
+    )
+    left.set_yticks(list(positions), names)
+    left.invert_yaxis()
+    left.axvline(0.0, color=MUTED, linewidth=0.8)
+    left.xaxis.set_major_formatter(PercentFormatter(1.0))
+    left.legend(fontsize=7, frameon=False, loc="lower right")
+    _style(left, f"{label} - annualized structural vs timing")
+
+    headers = ["Factor", "Structural", "Timing", "t timing"]
+    rows = [
+        [str(name), f"{row['structural']:+.2%}", f"{row['timing']:+.2%}", f"{row['t_timing']:+.2f}"]
+        for name, row in summary.iterrows()
+    ]
+    style_table(right, rows, headers, cellLoc="center", colWidths=_col_widths(rows, headers))
+
+
+def _draw_regression(left: Axes, right: Axes, label: str, result: AttributionResult) -> None:
+    regression = result.factor_regression()
+    table = regression.table
+    headers = ["Factor", "Beta", "t-stat", "Contribution"]
+    rows = [
+        [str(name), f"{row['beta']:+.2f}", f"{row['t_stat']:+.2f}", f"{row['contribution']:+.2%}"]
+        for name, row in table.iterrows()
+    ]
+    style_table(left, rows, headers, cellLoc="center", colWidths=_col_widths(rows, headers))
+    left.set_title(f"{label} - OLS on factor returns", color=INK, fontsize=11, loc="left")
+    summary = [
+        ["Alpha (annualized)", f"{regression.alpha:+.2%}"],
+        ["Alpha t-stat", f"{regression.alpha_t:+.2f}"],
+        ["Factor contribution", f"{table['contribution'].sum():+.2%}"],
+        ["R squared", f"{regression.r_squared:.2f}"],
+        ["Bars", f"{len(result.portfolio_returns):,}"],
+    ]
+    style_table(right, summary, ["Metric", "Value"], cellLoc="center")
+
+
 def _annualized_vol(returns: pd.Series[float]) -> float:
     """Same convention as ``PerformanceTracker.metrics``'s ``annualized_vol``:
     annualize off elapsed calendar time (the observed return frequency), not
@@ -221,6 +286,37 @@ class ReturnAttributionPage:
 
 
 @dataclass(frozen=True)
+class EdgeDecompositionPage:
+    results: Mapping[str, AttributionResult]
+
+    def render(self, pdf: PdfPages) -> None:
+        _render_legs(pdf, "Edge Decomposition", self.results, _draw_edge)
+
+
+@dataclass(frozen=True)
+class FactorTimingPage:
+    results: Mapping[str, AttributionResult]
+
+    def render(self, pdf: PdfPages) -> None:
+        names = {str(n) for r in self.results.values() for n in r.exposures.columns}
+        _render_legs(
+            pdf,
+            "Factor Timing vs Structural Beta",
+            self.results,
+            _draw_factor_timing,
+            left_labels=names,
+        )
+
+
+@dataclass(frozen=True)
+class FactorRegressionPage:
+    results: Mapping[str, AttributionResult]
+
+    def render(self, pdf: PdfPages) -> None:
+        _render_legs(pdf, "Factor Regression (returns-based)", self.results, _draw_regression)
+
+
+@dataclass(frozen=True)
 class ModelHealthPage:
     results: Mapping[str, AttributionResult]
 
@@ -233,5 +329,8 @@ def attribution_pages(results: Mapping[str, AttributionResult]) -> list[ReportPa
         FactorExposurePage(results),
         RiskDecompositionPage(results),
         ReturnAttributionPage(results),
+        EdgeDecompositionPage(results),
+        FactorTimingPage(results),
+        FactorRegressionPage(results),
         ModelHealthPage(results),
     ]
