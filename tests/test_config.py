@@ -135,3 +135,58 @@ def test_shipped_configs_hold_the_full_universe() -> None:
         assert len(config.tickers) == 61, name
         assert "PFF" in config.tickers, name
         assert config.portfolio == expected_portfolio, name
+
+
+def test_optimizer_section_parses_shrinkage_and_ridge(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized",'
+        ' "factor_model": {"factors_file": "configs/factors.json", "granular": true},'
+        ' "optimizer": {"shrinkage": 0.2, "ridge": 0.5}}'
+    )
+
+    config = MacdBacktestConfig.from_json(path)
+
+    assert config.optimizer is not None
+    assert config.optimizer.shrinkage == 0.2
+    assert config.optimizer.ridge == 0.5
+
+
+def test_shrinkage_defaults_to_zero(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized",'
+        ' "factor_model": {"factors_file": "configs/factors.json", "granular": true},'
+        ' "optimizer": {}}'
+    )
+
+    config = MacdBacktestConfig.from_json(path)
+
+    assert config.optimizer is not None
+    assert config.optimizer.shrinkage == 0.0
+    assert config.optimizer.ridge == 0.0
+
+
+@pytest.mark.parametrize("value", [-0.1, 1.1])
+def test_shrinkage_outside_the_unit_interval_is_rejected(tmp_path: Path, value: float) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized",'
+        ' "factor_model": {"factors_file": "configs/factors.json", "granular": true},'
+        f' "optimizer": {{"shrinkage": {value}}}}}'
+    )
+
+    with pytest.raises(ValueError, match="shrinkage"):
+        MacdBacktestConfig.from_json(path)
+
+
+def test_negative_ridge_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "c.json"
+    path.write_text(
+        '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized",'
+        ' "factor_model": {"factors_file": "configs/factors.json", "granular": true},'
+        ' "optimizer": {"ridge": -1.0}}'
+    )
+
+    with pytest.raises(ValueError, match="ridge"):
+        MacdBacktestConfig.from_json(path)

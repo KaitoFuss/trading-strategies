@@ -147,3 +147,12 @@ def test_keeps_previous_weights_when_the_solver_status_is_not_optimal(
     assert orders == []
     assert portfolio.solve_log[-1].status == "infeasible"
     assert any("infeasible" in record.message for record in caplog.records)
+
+
+def test_shrinkage_reaches_the_solver(tmp_path: Path) -> None:
+    portfolio, source = _portfolio(tmp_path, shrinkage=0.3)
+
+    _drive(portfolio, source, 120)
+
+    assert portfolio.solve_log
+    assert portfolio.solve_log[-1].status == "optimal"

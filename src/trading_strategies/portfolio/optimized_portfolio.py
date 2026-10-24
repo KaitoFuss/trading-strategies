@@ -64,6 +64,8 @@ class OptimizedPortfolio(BasePortfolio):
             information_coefficient=optimizer_config.information_coefficient,
             turnover_penalty_bps=optimizer_config.turnover_penalty_bps,
             factor_bounds=optimizer_config.factor_bounds,
+            shrinkage=optimizer_config.shrinkage,
+            ridge=optimizer_config.ridge,
         )
         self.solve_log: list[SolveLogEntry] = []
 

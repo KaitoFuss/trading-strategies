@@ -35,6 +35,14 @@ class OptimizerConfig:
     information_coefficient: float = 0.05
     turnover_penalty_bps: float = 5.0
     factor_bounds: Mapping[str, tuple[float, float]] = field(default_factory=dict)
+    shrinkage: float = 0.0
+    ridge: float = 0.0
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.shrinkage <= 1.0:
+            raise ValueError(f"shrinkage must be within [0, 1], got {self.shrinkage}")
+        if self.ridge < 0.0:
+            raise ValueError(f"ridge must be >= 0, got {self.ridge}")
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Self:
