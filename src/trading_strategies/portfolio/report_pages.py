@@ -5,7 +5,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 
+import numpy as np
 import pandas as pd
 from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
 from backtester.tracker.report import (
@@ -49,11 +51,33 @@ def _frame(entries: Sequence[SolveLogEntry]) -> pd.DataFrame:
     )
 
 
+def rolling_bias(
+    entries: Sequence[SolveLogEntry],
+    realized_returns: pd.Series[float],
+    window: int = 250,
+) -> pd.Series[float]:
+    """Rolling standard deviation of ``realized return / forecast vol``.
+
+    1.0 means the forecast was right. Above 1.0 means the book realized more
+    risk than the optimizer predicted, which is what an optimizer does when it
+    selects the directions where the covariance estimate is most optimistic.
+    Bars with no forecast (a flat book, or a non-optimal solve) are dropped
+    rather than counted as a perfect forecast.
+    """
+    frame = _frame(entries)
+    daily_forecast = frame["ex_ante_vol"] / np.sqrt(TRADING_DAYS_PER_YEAR)
+    aligned = realized_returns.reindex(frame.index)
+    live = (daily_forecast > 0) & aligned.notna()
+    standardized = aligned[live] / daily_forecast[live]
+    return cast("pd.Series[float]", standardized.rolling(window, min_periods=window // 2).std())
+
+
 @dataclass(frozen=True)
 class OptimizerDiagnosticsPage:
     entries: Sequence[SolveLogEntry]
     target_vol: float
     max_gross: float
+    realized_returns: pd.Series[float] | None = None
 
     def render(self, pdf: PdfPages) -> None:
         if not self.entries:
@@ -61,7 +85,7 @@ class OptimizerDiagnosticsPage:
         frame = _frame(self.entries)
         fig = new_page("Optimizer Diagnostics")
         grid = fig.add_gridspec(
-            2, 2, left=0.06, right=0.975, top=0.86, bottom=0.08, hspace=0.45, wspace=0.18
+            3, 2, left=0.06, right=0.975, top=0.86, bottom=0.08, hspace=0.45, wspace=0.18
         )
 
         ax_vol = fig.add_subplot(grid[0, 0])
@@ -91,13 +115,32 @@ class OptimizerDiagnosticsPage:
                 f"{frame['turnover'].mean() * TRADING_DAYS_PER_YEAR:.1f}x",
             ],
         ]
+        if self.realized_returns is not None:
+            ax_bias = fig.add_subplot(grid[2, 0])
+            series = rolling_bias(self.entries, self.realized_returns)
+            ax_bias.axhspan(0.95, 1.05, color=GRID, alpha=0.6)
+            ax_bias.axhline(1.0, color=MUTED, linewidth=0.8)
+            ax_bias.plot(series.index, series.to_numpy(), color=INK, linewidth=1.0)
+            _style(ax_bias, "Rolling bias statistic (250 bars, target 1.0)")
+
+            full = rolling_bias(self.entries, self.realized_returns, window=len(self.entries))
+            rows.append(
+                [
+                    "Bias statistic",
+                    f"{full.dropna().iloc[-1]:.2f}" if full.notna().any() else "n/a",
+                ]
+            )
         style_table(fig.add_subplot(grid[1, 1]), rows, ["Metric", "Value"], cellLoc="center")
         save_page(pdf, fig)
 
 
 def optimizer_pages(
-    entries: Sequence[SolveLogEntry], *, target_vol: float, max_gross: float
+    entries: Sequence[SolveLogEntry],
+    *,
+    target_vol: float,
+    max_gross: float,
+    realized_returns: pd.Series[float] | None = None,
 ) -> list[ReportPage]:
     if not entries:
         return []
-    return [OptimizerDiagnosticsPage(entries, target_vol, max_gross)]
+    return [OptimizerDiagnosticsPage(entries, target_vol, max_gross, realized_returns)]

@@ -11,6 +11,7 @@ import logging
 import sys
 from pathlib import Path
 
+import pandas as pd
 from backtester.tracker.metrics import monthly_returns_table, strategy_correlation_matrix
 from backtester.tracker.report import ReportPage, save_report
 
@@ -50,11 +51,18 @@ def main() -> None:
         extra_pages = attribution_pages(results)
 
     if isinstance(strategy_portfolio, OptimizedPortfolio):
+        history = trackers["MACD Benchmark"].mark_to_market_history
+        equity = pd.Series(
+            [value for _, value in history],
+            index=pd.DatetimeIndex([timestamp for timestamp, _ in history]),
+            dtype=float,
+        )
         extra_pages.extend(
             optimizer_pages(
                 strategy_portfolio.solve_log,
                 target_vol=config.target_vol,
                 max_gross=config.max_gross,
+                realized_returns=equity.pct_change().dropna(),
             )
         )
 
