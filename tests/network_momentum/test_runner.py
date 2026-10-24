@@ -10,7 +10,7 @@ from tests.synthetic_data import write_synthetic_parquet
 from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.portfolio import RescaledTargetVolPortfolio
 from trading_strategies.network_momentum.runner import run_macd_benchmark
-from trading_strategies.portfolio.optimized import OptimizedPortfolio
+from trading_strategies.portfolio.optimized_portfolio import OptimizedPortfolio
 from trading_strategies.risk.config import FactorModelConfig
 
 _TICKERS = ("SPY", "QQQ", "TLT")

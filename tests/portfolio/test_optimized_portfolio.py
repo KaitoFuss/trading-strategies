@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 from backtester.core.events import Position, SignalEvent
 
-from trading_strategies.portfolio import optimized as optimized_module
-from trading_strategies.portfolio.optimized import OptimizedPortfolio
-from trading_strategies.portfolio.problem import SolveResult
+from trading_strategies.portfolio import optimized_portfolio as optimized_module
+from trading_strategies.portfolio.optimized_portfolio import OptimizedPortfolio
+from trading_strategies.portfolio.solver import SolveResult
 from trading_strategies.risk.config import FactorModelConfig, MomentumConfig, OptimizerConfig
 from trading_strategies.utils.streaming import FloatArray
 

@@ -16,7 +16,7 @@ from backtester.tracker.report import ReportPage, save_report
 
 from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.runner import run_macd_benchmark
-from trading_strategies.portfolio.optimized import OptimizedPortfolio
+from trading_strategies.portfolio.optimized_portfolio import OptimizedPortfolio
 from trading_strategies.portfolio.report_pages import optimizer_pages
 from trading_strategies.risk.attribution import attribute_backtest
 from trading_strategies.risk.report_pages import attribution_pages

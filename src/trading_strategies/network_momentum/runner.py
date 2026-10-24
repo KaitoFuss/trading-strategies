@@ -22,7 +22,7 @@ from trading_strategies.network_momentum.portfolio import (
     TargetVolPortfolio,
 )
 from trading_strategies.network_momentum.strategies import MacdBenchmarkStrategy
-from trading_strategies.portfolio.optimized import OptimizedPortfolio
+from trading_strategies.portfolio.optimized_portfolio import OptimizedPortfolio
 from trading_strategies.risk.config import OptimizerConfig
 
 

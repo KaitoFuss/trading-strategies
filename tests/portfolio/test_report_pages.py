@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 
-from trading_strategies.portfolio.optimized import SolveLogEntry
+from trading_strategies.portfolio.optimized_portfolio import SolveLogEntry
 from trading_strategies.portfolio.report_pages import optimizer_pages
 
 

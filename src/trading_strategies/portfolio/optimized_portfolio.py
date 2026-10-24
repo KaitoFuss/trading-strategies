@@ -26,7 +26,7 @@ from backtester.core.events import OrderEvent, SignalEvent, Ticker
 from backtester.core.trade_log import log_trade
 from backtester.portfolio.base import BasePortfolio
 
-from trading_strategies.portfolio.problem import OptimizerParams, solve_weights
+from trading_strategies.portfolio.solver import OptimizerParams, solve_weights
 from trading_strategies.risk.config import FactorModelConfig, OptimizerConfig
 from trading_strategies.risk.model import FactorRiskModel
 

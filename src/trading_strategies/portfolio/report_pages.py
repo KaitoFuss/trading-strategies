@@ -23,7 +23,7 @@ from matplotlib.axes import Axes
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.ticker import PercentFormatter
 
-from trading_strategies.portfolio.optimized import SolveLogEntry
+from trading_strategies.portfolio.optimized_portfolio import SolveLogEntry
 
 
 def _style(ax: Axes, title: str) -> None:

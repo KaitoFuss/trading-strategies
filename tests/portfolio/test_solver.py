@@ -6,7 +6,7 @@ import cvxpy as cp
 import numpy as np
 import pytest
 
-from trading_strategies.portfolio.problem import OptimizerParams, solve_weights
+from trading_strategies.portfolio.solver import OptimizerParams, solve_weights
 from trading_strategies.risk.model import RiskModelSnapshot
 
 
@@ -128,7 +128,7 @@ def test_unscored_tickers_get_zero_alpha() -> None:
 
 def test_an_inexact_solve_is_treated_as_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     """cvxpy can report ``optimal_inaccurate`` with ``w.value`` still
-    populated. That must not be logged as a trade: optimized.py only sends
+    populated. That must not be logged as a trade: optimized_portfolio.py only sends
     orders on an ``"optimal"`` status, so a solve the portfolio never acts on
     must not report nonzero ex-ante vol/gross/turnover either."""
     snapshot = _snapshot()
