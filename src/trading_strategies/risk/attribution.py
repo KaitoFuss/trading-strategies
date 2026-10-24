@@ -16,6 +16,13 @@ over the sample it is ``T * cov(x_k, f_k)``), momentum, asset selection
 intraday trading, costs). The mean is ex post on purpose: this is a
 description of the backtest, not a trading input.
 
+``factor_regression`` is the returns-based cross-check (AQR, "Measuring
+Portfolio Factor Exposures: A Practical Guide", Exhibit 2): a full-sample OLS of
+the portfolio's arithmetic returns on the factor returns, with each factor's
+contribution ``beta_k * mean(f_k)`` and the intercept as alpha. It needs no
+holdings and no ``B``. A static beta cannot see timing, so timing P&L lands in
+its alpha.
+
 Contributions sum arithmetically over time; per bar the decomposition is
 exact by construction. Holdings-based rather than a returns regression,
 because a trend strategy's exposures move on purpose."""
@@ -44,6 +51,14 @@ STRUCTURAL = "Structural beta"
 TIMING = "Factor timing"
 SELECTION = "Asset selection"
 OTHER = "Other"
+
+
+@dataclass(frozen=True)
+class FactorRegression:
+    table: pd.DataFrame  # per factor: beta, t_stat, contribution (annualized)
+    alpha: float  # annualized
+    alpha_t: float
+    r_squared: float
 
 
 @dataclass(frozen=True)
@@ -116,6 +131,37 @@ class AttributionResult:
                 "timing": timing.mean() * TRADING_DAYS_PER_YEAR,
                 "t_timing": _t_stats(timing),
             }
+        )
+
+    def factor_regression(self) -> FactorRegression:
+        """OLS ``R_t = alpha + sum_k beta_k f_k,t + e_t`` on arithmetic
+        portfolio returns. Contributions plus alpha equal the mean return."""
+        factors = list(self.factor_returns.columns)
+        y = np.expm1(self.portfolio_returns.to_numpy(dtype=np.float64))
+        n, k = len(y), len(factors) + 1
+        if n <= k:
+            nan = pd.Series(math.nan, index=factors, dtype=float)
+            table = pd.DataFrame({"beta": nan, "t_stat": nan, "contribution": nan})
+            return FactorRegression(table, math.nan, math.nan, math.nan)
+        f = self.factor_returns.to_numpy(dtype=np.float64)
+        x = np.column_stack([np.ones(n), f])
+        coef = np.linalg.lstsq(x, y, rcond=None)[0]
+        residual = y - x @ coef
+        variance = float(residual @ residual) / (n - k)
+        stderr = np.sqrt(np.diag(np.linalg.pinv(x.T @ x)) * variance)
+        t = np.divide(coef, stderr, out=np.zeros_like(coef), where=stderr > 0)
+        total = float(((y - y.mean()) ** 2).sum())
+        table = pd.DataFrame(
+            {
+                "beta": coef[1:],
+                "t_stat": t[1:],
+                "contribution": coef[1:] * f.mean(axis=0) * TRADING_DAYS_PER_YEAR,
+            },
+            index=factors,
+        )
+        r_squared = 1.0 - float(residual @ residual) / total if total > 0 else math.nan
+        return FactorRegression(
+            table, float(coef[0]) * TRADING_DAYS_PER_YEAR, float(t[0]), r_squared
         )
 
 

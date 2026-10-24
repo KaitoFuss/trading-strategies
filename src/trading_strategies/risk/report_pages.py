@@ -210,6 +210,26 @@ def _draw_factor_timing(left: Axes, right: Axes, label: str, result: Attribution
     style_table(right, rows, headers, cellLoc="center", colWidths=_col_widths(rows, headers))
 
 
+def _draw_regression(left: Axes, right: Axes, label: str, result: AttributionResult) -> None:
+    regression = result.factor_regression()
+    table = regression.table
+    headers = ["Factor", "Beta", "t-stat", "Contribution"]
+    rows = [
+        [str(name), f"{row['beta']:+.2f}", f"{row['t_stat']:+.2f}", f"{row['contribution']:+.2%}"]
+        for name, row in table.iterrows()
+    ]
+    style_table(left, rows, headers, cellLoc="center", colWidths=_col_widths(rows, headers))
+    left.set_title(f"{label} - OLS on factor returns", color=INK, fontsize=11, loc="left")
+    summary = [
+        ["Alpha (annualized)", f"{regression.alpha:+.2%}"],
+        ["Alpha t-stat", f"{regression.alpha_t:+.2f}"],
+        ["Factor contribution", f"{table['contribution'].sum():+.2%}"],
+        ["R squared", f"{regression.r_squared:.2f}"],
+        ["Bars", f"{len(result.portfolio_returns):,}"],
+    ]
+    style_table(right, summary, ["Metric", "Value"], cellLoc="center")
+
+
 def _annualized_vol(returns: pd.Series[float]) -> float:
     """Same convention as ``PerformanceTracker.metrics``'s ``annualized_vol``:
     annualize off elapsed calendar time (the observed return frequency), not
@@ -289,6 +309,14 @@ class FactorTimingPage:
 
 
 @dataclass(frozen=True)
+class FactorRegressionPage:
+    results: Mapping[str, AttributionResult]
+
+    def render(self, pdf: PdfPages) -> None:
+        _render_legs(pdf, "Factor Regression (returns-based)", self.results, _draw_regression)
+
+
+@dataclass(frozen=True)
 class ModelHealthPage:
     results: Mapping[str, AttributionResult]
 
@@ -303,5 +331,6 @@ def attribution_pages(results: Mapping[str, AttributionResult]) -> list[ReportPa
         ReturnAttributionPage(results),
         EdgeDecompositionPage(results),
         FactorTimingPage(results),
+        FactorRegressionPage(results),
         ModelHealthPage(results),
     ]

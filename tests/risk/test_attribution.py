@@ -202,3 +202,50 @@ def test_factor_summary_splits_each_factor() -> None:
     assert list(summary.columns) == ["structural", "timing", "t_timing"]
     assert summary.loc["Equity", "structural"] == pytest.approx(0.005 * TRADING_DAYS_PER_YEAR)
     assert summary.loc["Equity", "timing"] == pytest.approx(0.0, abs=1e-15)
+
+
+def _regression_result(n: int = 2000, seed: int = 1) -> AttributionResult:
+    rng = np.random.default_rng(seed)
+    dates = pd.date_range("2020-01-01", periods=n, freq="D")
+    f = pd.DataFrame(
+        {"Equity": rng.normal(0.0004, 0.01, n), "Rates": rng.normal(0.0001, 0.005, n)},
+        index=dates,
+    )
+    simple = 0.0002 + 0.8 * f["Equity"] - 0.5 * f["Rates"] + rng.normal(0, 0.002, n)
+    returns = pd.Series(np.log1p(simple.to_numpy()), index=dates, dtype=float)
+    return AttributionResult(
+        exposures=pd.DataFrame({"Equity": 0.8, "Rates": -0.5}, index=dates),
+        risk_decomposition=pd.DataFrame(index=dates),
+        contributions=pd.DataFrame(index=dates),
+        portfolio_returns=returns,
+        predicted_vol=pd.Series(0.01, index=dates),
+        factor_returns=f,
+        specific_returns=pd.Series(0.0, index=dates, dtype=float),
+    )
+
+
+def test_factor_regression_recovers_known_betas_and_alpha() -> None:
+    regression = _regression_result().factor_regression()
+
+    assert regression.table.loc["Equity", "beta"] == pytest.approx(0.8, abs=0.01)
+    assert regression.table.loc["Rates", "beta"] == pytest.approx(-0.5, abs=0.02)
+    assert regression.alpha == pytest.approx(0.0002 * TRADING_DAYS_PER_YEAR, abs=0.01)
+    assert regression.table["t_stat"]["Equity"] > 50
+    assert regression.r_squared > 0.9
+
+
+def test_factor_regression_contributions_and_alpha_add_up_to_the_mean_return() -> None:
+    result = _regression_result()
+
+    regression = result.factor_regression()
+
+    mean_simple = float(np.expm1(result.portfolio_returns).mean()) * TRADING_DAYS_PER_YEAR
+    assert regression.alpha + regression.table["contribution"].sum() == pytest.approx(mean_simple)
+
+
+def test_factor_regression_on_too_few_bars_is_nan() -> None:
+    regression = _hand_built([1.0, 0.5], [0.01, -0.02]).factor_regression()
+
+    assert math.isnan(regression.alpha)
+    assert math.isnan(regression.r_squared)
+    assert regression.table["beta"].isna().all()
