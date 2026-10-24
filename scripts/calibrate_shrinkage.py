@@ -106,8 +106,10 @@ def main() -> None:
             gross,
         )
 
+    logger.info(
+        "\nin-sample reference only (not the selection): shrinkage=%.2f", select_shrinkage(rows)
+    )
     logger.info("\nwalk-forward folds:\n%s", fold_table(per_delta).round(3).to_string())
-    logger.info("\nfull-sample selection: shrinkage=%.2f", select_shrinkage(rows))
 
 
 if __name__ == "__main__":
