@@ -85,6 +85,72 @@ def test_select_shrinkage_falls_back_to_the_closest_bias() -> None:
     assert select_shrinkage(rows) == 0.5
 
 
+def test_select_shrinkage_is_nan_when_no_row_is_usable() -> None:
+    assert np.isnan(select_shrinkage([]))
+    assert np.isnan(select_shrinkage([SweepRow(0.0, float("nan"), 0.2, 0.19, 12.0, 1.9)]))
+
+
+def test_select_shrinkage_ignores_a_nan_bias_in_the_fallback() -> None:
+    rows = [
+        SweepRow(0.0, float("nan"), 0.20, 0.19, 12.0, 1.9),
+        SweepRow(0.5, 1.12, 0.17, 0.17, 10.0, 1.8),
+    ]
+
+    assert select_shrinkage(rows) == 0.5
+
+
+def test_select_shrinkage_breaks_an_equidistant_tie_toward_the_smaller_delta() -> None:
+    rows = [
+        SweepRow(0.3, 1.25, 0.20, 0.19, 12.0, 1.9),
+        SweepRow(0.0, 0.75, 0.17, 0.17, 10.0, 1.8),
+    ]
+
+    assert abs(rows[0].bias - 1.0) == abs(rows[1].bias - 1.0)
+    assert select_shrinkage(rows) == 0.0
+
+
+def test_fold_table_reports_nan_for_a_fold_with_an_empty_calibration_slice() -> None:
+    index = pd.date_range("2013-01-01", "2016-12-31", freq="B")
+    per_delta = {
+        0.0: pd.DataFrame({"forecast": 0.01, "realized": 0.01}, index=index),
+        0.2: pd.DataFrame({"forecast": 0.01, "realized": 0.01}, index=index),
+    }
+
+    table = fold_table(per_delta, folds=((2013, 2017),))
+
+    # no candidate has evidence, so nothing is selected and no delta is printed
+    assert list(table.columns) == ["selected", "calibration_bias", "evaluation_bias"]
+    assert bool(table.loc["2013-2016"].isna().all())
+
+
+def test_fold_table_selects_per_fold_without_look_ahead() -> None:
+    """Each fold must see only bars before its own calibration boundary.
+
+    ``0.0`` is well calibrated before 2017 and badly after; ``0.2`` is the other
+    way round. Fold ``2017-2020`` must therefore still pick ``0.0``: widening the
+    calibration filter to ``years < evaluation_end`` lets the post-2017 regime in
+    and flips that fold to ``0.2``.
+    """
+    index = pd.date_range("2008-01-01", "2025-12-31", freq="B")
+    rng = np.random.default_rng(0)
+    early = index.year < 2017
+
+    def _realized(early_vol: float, late_vol: float) -> pd.Series[float]:
+        scale = np.where(early, early_vol, late_vol)
+        return pd.Series(rng.normal(0, 1, len(index)) * scale, index=index, dtype=float)
+
+    per_delta = {
+        0.0: pd.DataFrame({"forecast": 0.01, "realized": _realized(0.010, 0.040)}, index=index),
+        0.2: pd.DataFrame({"forecast": 0.01, "realized": _realized(0.013, 0.010)}, index=index),
+    }
+
+    table = fold_table(per_delta)
+
+    assert table.loc["2013-2016", "selected"] == 0.0
+    assert table.loc["2017-2020", "selected"] == 0.0
+    assert table.loc["2021-2023", "selected"] == 0.2
+
+
 def test_fold_table_reports_one_row_per_fold() -> None:
     index = pd.date_range("2008-01-01", "2025-12-31", freq="B")
     rng = np.random.default_rng(0)

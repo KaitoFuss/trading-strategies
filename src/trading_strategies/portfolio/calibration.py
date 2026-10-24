@@ -11,9 +11,9 @@ where the edge came from, not a reason to pick another value.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import cast
 
 import pandas as pd
 
@@ -45,11 +45,19 @@ def select_shrinkage(rows: Sequence[SweepRow], band: tuple[float, float] = _BAND
     """The smallest shrinkage whose bias sits inside ``band``; failing that, the
     one whose bias is closest to 1.0. Smallest, because shrinkage is a
     distortion of the model's own estimate: take as little as the calibration
-    allows."""
-    inside = [row for row in rows if band[0] <= row.bias <= band[1]]
+    allows, and equidistant biases therefore go to the smaller delta.
+
+    Rows whose bias is ``nan`` carry no evidence, so they are dropped first --
+    a ``nan`` compares False against everything and would otherwise win by
+    input order. Returns ``nan`` when no row is usable.
+    """
+    usable = [row for row in rows if not math.isnan(row.bias)]
+    if not usable:
+        return float("nan")
+    inside = [row for row in usable if band[0] <= row.bias <= band[1]]
     if inside:
         return min(inside, key=lambda row: row.shrinkage).shrinkage
-    return min(rows, key=lambda row: abs(row.bias - 1.0)).shrinkage
+    return min(usable, key=lambda row: (abs(row.bias - 1.0), row.shrinkage)).shrinkage
 
 
 def fold_table(
@@ -59,15 +67,16 @@ def fold_table(
 
     Each frame in ``per_delta`` holds ``forecast`` and ``realized`` on a
     DatetimeIndex, with ``realized`` already aligned so that index ``t`` holds
-    the return the forecast at ``t`` is responsible for. For each fold the selection sees only bars before the
-    calibration boundary, and the reported evaluation bias covers the bars
-    between the two boundaries.
+    the return the forecast at ``t`` is responsible for. For each fold the
+    selection sees only bars before the calibration boundary, and the reported
+    evaluation bias covers the bars between the two boundaries. A fold whose
+    calibration slice supports no candidate reports ``nan`` throughout.
     """
     records: dict[str, dict[str, float]] = {}
     for calibration_end, evaluation_end in folds:
         rows: list[SweepRow] = []
         for shrinkage, frame in sorted(per_delta.items()):
-            years = cast("pd.DatetimeIndex", frame.index).year
+            years = pd.DatetimeIndex(frame.index).year
             calibration = frame[years < calibration_end]
             rows.append(
                 SweepRow(
@@ -80,10 +89,17 @@ def fold_table(
                 )
             )
         selected = select_shrinkage(rows)
-        frame = per_delta[selected]
-        years = cast("pd.DatetimeIndex", frame.index).year
-        evaluation = frame[(years >= calibration_end) & (years < evaluation_end)]
         label = f"{calibration_end}-{evaluation_end - 1}"
+        if math.isnan(selected):
+            records[label] = {
+                "selected": float("nan"),
+                "calibration_bias": float("nan"),
+                "evaluation_bias": float("nan"),
+            }
+            continue
+        frame = per_delta[selected]
+        years = pd.DatetimeIndex(frame.index).year
+        evaluation = frame[(years >= calibration_end) & (years < evaluation_end)]
         records[label] = {
             "selected": selected,
             "calibration_bias": next(r.bias for r in rows if r.shrinkage == selected),
