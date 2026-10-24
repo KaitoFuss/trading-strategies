@@ -24,7 +24,7 @@ Repository = "https://github.com/KaitoFuss/trading-strategies"
 Issues = "https://github.com/KaitoFuss/trading-strategies/issues"
 
 [tool.uv.sources]
-backtester = { git = "https://github.com/KaitoFuss/backtester", rev = "f6af038791823dd9f907ec6d5535259b0b1a5f5a" }
+backtester = { git = "https://github.com/KaitoFuss/backtester", rev = "fd0319e35deffe2a0b6c1b884fbc44cb1ded8221" }
 
 [build-system]
 requires = ["uv_build>=0.11.26,<0.12.0"]

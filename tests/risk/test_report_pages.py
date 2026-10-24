@@ -1,16 +1,25 @@
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
+from pathlib import Path
 from typing import Any, cast
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import pytest
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.figure import Figure
 
+from trading_strategies.risk import report_pages
 from trading_strategies.risk.attribution import RESIDUAL, AttributionResult
 from trading_strategies.risk.model import IDIOSYNCRATIC
-from trading_strategies.risk.report_pages import FactorRegressionPage, attribution_pages
+from trading_strategies.risk.report_pages import (
+    FactorDefinitionsPage,
+    FactorRegressionPage,
+    attribution_pages,
+)
 
 
 class _CountingPdf:
@@ -92,5 +101,54 @@ def test_factor_regression_page_renders_one_page() -> None:
     pdf = _CountingPdf()
 
     FactorRegressionPage({"Strategy": _result(), "Empty": _empty()}).render(cast(PdfPages, pdf))
+
+    assert pdf.pages == 1
+
+
+def _factors_file(tmp_path: Path) -> Path:
+    path = tmp_path / "factors.json"
+    path.write_text(
+        json.dumps(
+            {
+                "factors": [
+                    {"name": "Tech", "level": 4, "granular": True, "weights": {"QQQ": 1.0}},
+                    {
+                        "name": "Equity",
+                        "level": 1,
+                        "granular": False,
+                        "weights": {"SPY": 0.6, "EFA": -0.4},
+                    },
+                ]
+            }
+        )
+    )
+    return path
+
+
+@pytest.mark.parametrize(("granular", "tech_active"), [(True, "yes"), (False, "no")])
+def test_factor_definitions_page_lists_every_factor_and_marks_inactive_ones(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, granular: bool, tech_active: str
+) -> None:
+    captured: list[Sequence[Sequence[str]]] = []
+    monkeypatch.setattr(
+        report_pages, "save_table_pages", lambda _pdf, _title, rows, *_, **__: captured.append(rows)
+    )
+
+    FactorDefinitionsPage(_factors_file(tmp_path), granular=granular).render(
+        cast(PdfPages, _CountingPdf())
+    )
+
+    assert captured == [
+        [
+            ["Equity", "1", "no", "yes", "SPY +0.60, EFA -0.40"],
+            ["Tech", "4", "yes", tech_active, "QQQ +1.00"],
+        ]
+    ]
+
+
+def test_factor_definitions_page_renders_the_repo_factors_on_one_page() -> None:
+    pdf = _CountingPdf()
+
+    FactorDefinitionsPage(Path("configs/factors.json"), granular=True).render(cast(PdfPages, pdf))
 
     assert pdf.pages == 1

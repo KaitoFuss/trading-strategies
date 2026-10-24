@@ -19,7 +19,7 @@ from trading_strategies.network_momentum.runner import run_macd_benchmark
 from trading_strategies.portfolio.optimized_portfolio import OptimizedPortfolio
 from trading_strategies.portfolio.report_pages import optimizer_pages
 from trading_strategies.risk.attribution import attribute_backtest
-from trading_strategies.risk.report_pages import attribution_pages
+from trading_strategies.risk.report_pages import FactorDefinitionsPage, attribution_pages
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,13 @@ def main() -> None:
             )
         )
 
+    if config.factor_model is not None:
+        extra_pages.append(
+            FactorDefinitionsPage(
+                Path(config.factor_model.factors_file), granular=config.factor_model.granular
+            )
+        )
+
     report_path = save_report(
         Path(config.output_dir),
         histories,
@@ -67,6 +74,7 @@ def main() -> None:
         correlation,
         extra_pages=extra_pages,
         config=config,
+        overview_png=False,
     )
     logger.info("Done — wrote %s", report_path)
 
