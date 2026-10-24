@@ -165,3 +165,47 @@ def test_binding_constraint_reports_both_when_vol_and_leverage_tie() -> None:
     params = OptimizerParams(target_vol=0.10, max_gross=1.0)
 
     assert _binding_constraint(vol=0.10, gross=1.0, params=params) == "both"
+
+
+def _mean_variance(risk_aversion: float, *, target_vol: float = 10.0) -> OptimizerParams:
+    return OptimizerParams(
+        target_vol=target_vol,
+        max_gross=100.0,
+        turnover_penalty_bps=0.0,
+        objective="mean_variance",
+        risk_aversion=risk_aversion,
+    )
+
+
+def test_mean_variance_without_binding_limits_is_the_closed_form() -> None:
+    snapshot = _snapshot(correlated=True, d=np.array([0.0001, 0.0004, 0.0009]))
+    scores = {"T0": 1.0, "T1": 0.5, "T2": -1.0}
+    params = _mean_variance(50.0)
+
+    result = solve_weights(scores, snapshot, np.zeros(3), params)
+
+    alpha = params.information_coefficient * snapshot.sigma * np.array([1.0, 0.5, -1.0])
+    expected = np.linalg.solve(snapshot.covariance(), alpha) / 50.0
+    assert result.status == "optimal"
+    np.testing.assert_allclose(result.weights, expected, rtol=1e-4)
+    assert result.binding == "interior"
+
+
+def test_mean_variance_book_shrinks_as_risk_aversion_rises() -> None:
+    snapshot = _snapshot(correlated=True, d=np.array([0.0001, 0.0004, 0.0009]))
+    scores = {"T0": 1.0, "T1": 0.5, "T2": -1.0}
+
+    low = solve_weights(scores, snapshot, np.zeros(3), _mean_variance(20.0))
+    high = solve_weights(scores, snapshot, np.zeros(3), _mean_variance(80.0))
+
+    assert high.ex_ante_vol == pytest.approx(low.ex_ante_vol / 4.0, rel=1e-3)
+
+
+def test_mean_variance_target_vol_binds_when_risk_aversion_is_small() -> None:
+    snapshot = _snapshot()
+    params = _mean_variance(0.01, target_vol=0.25)
+
+    result = solve_weights({"T0": 1.0, "T1": 0.5, "T2": -1.0}, snapshot, np.zeros(3), params)
+
+    assert result.ex_ante_vol == pytest.approx(0.25, rel=1e-3)
+    assert result.binding == "vol"
