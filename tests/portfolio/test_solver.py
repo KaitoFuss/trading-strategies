@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 import cvxpy as cp
 import numpy as np
 import pytest
+from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
 
 from trading_strategies.portfolio.solver import (
     OptimizerParams,
@@ -203,3 +205,89 @@ def test_shrinkage_keeps_the_matrix_psd() -> None:
 
     for shrinkage in (0.0, 0.1, 0.5, 0.9, 1.0):
         assert np.linalg.eigvalsh(shrunk_covariance(total, shrinkage)).min() > -1e-12
+
+
+def _twin_snapshot(off_diagonal: float) -> RiskModelSnapshot:
+    """Two assets the model believes are nearly the same risk, so a long/short
+    pair looks almost riskless. ``off_diagonal`` is their modelled covariance."""
+    variance = 0.0001
+    total = np.array([[variance, off_diagonal], [off_diagonal, variance]])
+    values, vectors = np.linalg.eigh(total)
+    b = vectors * np.sqrt(np.clip(values, 0.0, None))  # B F B' == total, D == 0
+    return RiskModelSnapshot(
+        tickers=("A", "B"),
+        factors=("F0", "F1"),
+        B=b,
+        F=np.eye(2),
+        D=np.zeros(2),
+        sigma=np.sqrt(np.diag(total)),
+        factor_weights=np.zeros((2, 2)),
+        macro_betas=b,
+        momentum=None,
+        ready=True,
+    )
+
+
+def test_ex_ante_vol_is_reported_on_the_unshrunk_covariance() -> None:
+    """The anti-circularity guard: if the reported vol used Sigma_eff, the bias
+    statistic would measure the shrinkage instead of the outcome."""
+    snapshot = _snapshot(correlated=True)
+    params = OptimizerParams(
+        target_vol=0.10, max_gross=100.0, turnover_penalty_bps=0.0, shrinkage=0.5
+    )
+
+    result = solve_weights({"T0": 1.0, "T1": 0.5, "T2": -1.0}, snapshot, np.zeros(3), params)
+
+    honest = float(
+        np.sqrt(snapshot.portfolio_variance(result.weights)) * np.sqrt(TRADING_DAYS_PER_YEAR)
+    )
+    assert result.ex_ante_vol == pytest.approx(honest, rel=1e-9)
+
+
+def test_shrinkage_shrinks_an_apparently_riskless_pair() -> None:
+    snapshot = _twin_snapshot(off_diagonal=0.000099)  # correlation 0.99
+    scores = {"A": 1.0, "B": -1.0}
+    base = OptimizerParams(target_vol=0.10, max_gross=100.0, turnover_penalty_bps=0.0)
+
+    raw = solve_weights(scores, snapshot, np.zeros(2), base)
+    shrunk = solve_weights(scores, snapshot, np.zeros(2), replace(base, shrinkage=0.3))
+
+    assert raw.gross > 2.0 * shrunk.gross
+
+
+def test_shrinkage_raises_the_realized_vol_of_the_chosen_book() -> None:
+    """With shrinkage on, the book the solver picks is riskier under the TRUE
+    Sigma than the target it was given -- which is the effect the walk-forward
+    calibration trades off. Here it simply must not silently violate the
+    unshrunk budget by less than before."""
+    snapshot = _twin_snapshot(off_diagonal=0.000099)
+    scores = {"A": 1.0, "B": -1.0}
+    params = OptimizerParams(
+        target_vol=0.10, max_gross=100.0, turnover_penalty_bps=0.0, shrinkage=0.3
+    )
+
+    result = solve_weights(scores, snapshot, np.zeros(2), params)
+
+    assert result.ex_ante_vol <= 0.10 + 1e-6
+
+
+def test_ridge_at_zero_reproduces_the_plain_solution() -> None:
+    snapshot = _snapshot(correlated=True)
+    scores = {"T0": 1.0, "T1": 0.5, "T2": -1.0}
+    base = OptimizerParams(target_vol=0.10, max_gross=100.0, turnover_penalty_bps=0.0)
+
+    plain = solve_weights(scores, snapshot, np.zeros(3), base)
+    with_ridge = solve_weights(scores, snapshot, np.zeros(3), replace(base, ridge=0.0))
+
+    np.testing.assert_allclose(plain.weights, with_ridge.weights, atol=1e-9)
+
+
+def test_ridge_pulls_the_book_toward_zero() -> None:
+    snapshot = _snapshot(correlated=True)
+    scores = {"T0": 1.0, "T1": 0.5, "T2": -1.0}
+    base = OptimizerParams(target_vol=0.10, max_gross=100.0, turnover_penalty_bps=0.0)
+
+    plain = solve_weights(scores, snapshot, np.zeros(3), base)
+    heavy = solve_weights(scores, snapshot, np.zeros(3), replace(base, ridge=1.0))
+
+    assert heavy.gross < plain.gross

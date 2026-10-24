@@ -20,6 +20,7 @@ from trading_strategies.risk.model import RiskModelSnapshot
 from trading_strategies.utils.streaming import FloatArray
 
 _BINDING_TOLERANCE = 1e-4
+_CHOLESKY_JITTER = 1e-18
 
 
 @dataclass(frozen=True)
@@ -52,6 +53,26 @@ class OptimizerParams:
     ``snapshot.factors``; an unknown name raises. Empty means unconstrained.
     """
 
+    shrinkage: float = 0.0
+    """How far to blend ``Sigma`` toward its own diagonal inside the vol
+    constraint: ``Sigma_eff = (1-s) * Sigma + s * diag(Sigma)``.
+
+    ``0`` uses the model's matrix unchanged. Higher values make the optimizer
+    distrust correlations, which is where the estimation error it exploits
+    lives. This is a decision device, not a risk statement: the risk model,
+    the attribution and ``SolveResult.ex_ante_vol`` all keep the unshrunk
+    matrix, so the bias statistic stays an honest measurement of the outcome.
+    """
+
+    ridge: float = 0.0
+    """Weight on a ``-ridge * ||w||_2^2`` term in the objective.
+
+    Equivalent to shrinking toward the identity rather than toward
+    ``diag(Sigma)``, and kept only as the comparison arm for the shrinkage
+    calibration. It penalizes low-vol assets harder, because it ignores each
+    asset's own variance. Default ``0`` means no ridge term at all.
+    """
+
 
 @dataclass(frozen=True)
 class SolveResult:
@@ -82,21 +103,31 @@ def solve_weights(
     target_daily = params.target_vol / np.sqrt(TRADING_DAYS_PER_YEAR)
     turnover_penalty = params.turnover_penalty_bps / 1e4
 
-    values, vectors = np.linalg.eigh(snapshot.F)
-    f_half = vectors * np.sqrt(np.clip(values, 0.0, None))
-
     w = cp.Variable(len(snapshot.tickers))
-    risk = cp.norm(  # type: ignore[attr-defined]
-        cp.hstack(  # type: ignore[attr-defined]
-            [f_half.T @ (snapshot.B.T @ w), cp.multiply(np.sqrt(snapshot.D), w)]  # type: ignore[attr-defined]
+    if params.shrinkage > 0.0:
+        # Sigma_eff loses the factor form, so the SOC term needs one square
+        # root of the whole matrix. The jitter keeps the Cholesky well defined
+        # when an asset's variance is zero.
+        effective = shrunk_covariance(snapshot.covariance(), params.shrinkage)
+        root = np.linalg.cholesky(effective + _CHOLESKY_JITTER * np.eye(len(effective)))
+        risk = cp.norm(root.T @ w)  # type: ignore[attr-defined]
+    else:
+        values, vectors = np.linalg.eigh(snapshot.F)
+        f_half = vectors * np.sqrt(np.clip(values, 0.0, None))
+        risk = cp.norm(  # type: ignore[attr-defined]
+            cp.hstack(  # type: ignore[attr-defined]
+                [f_half.T @ (snapshot.B.T @ w), cp.multiply(np.sqrt(snapshot.D), w)]  # type: ignore[attr-defined]
+            )
         )
-    )
     constraints = [risk <= target_daily, cp.norm1(w) <= params.max_gross]  # type: ignore[attr-defined]
     for name, (low, high) in params.factor_bounds.items():
         exposure = snapshot.B[:, snapshot.factors.index(name)] @ w
         constraints += [exposure >= low, exposure <= high]
 
-    objective = cp.Maximize(alpha @ w - turnover_penalty * cp.norm1(w - w_prev))  # type: ignore[attr-defined]
+    utility = alpha @ w - turnover_penalty * cp.norm1(w - w_prev)  # type: ignore[attr-defined]
+    if params.ridge > 0.0:
+        utility = utility - params.ridge * cp.sum_squares(w)  # type: ignore[attr-defined]
+    objective = cp.Maximize(utility)
     problem = cp.Problem(objective, constraints)
     problem.solve(solver=cp.CLARABEL)  # type: ignore[no-untyped-call]
 
