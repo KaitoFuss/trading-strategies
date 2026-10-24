@@ -145,7 +145,14 @@ def residualize_exposure(exposure: FloatArray, betas: FloatArray) -> FloatArray 
     std = float(residual.std())
     # Relative floor: an exposure that is an exact linear function of the betas
     # leaves a residual at float noise (~1e-16 for values of order 1), which an
-    # absolute 1e-18 epsilon would wrongly treat as real dispersion.
+    # absolute 1e-18 epsilon would wrongly treat as real dispersion. This is not
+    # a corner case: it happens whenever there are fewer assets than active
+    # factors, which is exactly the 3-ticker integration test, where the
+    # momentum characteristic is an exact linear function of the macro betas.
+    # An absolute epsilon would z-score that noise and feed meaningless
+    # exposures into B. The relative floor instead returns None, so momentum
+    # simply does not join F that bar.
+    # test_residualize_exposure_returns_none_without_dispersion pins this.
     if std <= max(_VARIANCE_EPS, 1e-12 * float(np.abs(exposure).max())):
         return None
     return residual / std

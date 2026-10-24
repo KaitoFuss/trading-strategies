@@ -1,7 +1,23 @@
-"""Print the factor model's three sizing diagnostics for a backtest config.
+"""Check the factor model before you trust it for position sizing.
+
+It measures three things. Do residual correlations stay small, so a diagonal
+``D`` is defensible. Is the momentum factor really separate from the macro
+betas. Have the loadings drifted so much that the betas are no longer stable
+enough to size on.
+
+Run it by hand, not during a backtest. Run it before trusting the model for
+sizing, and again after any change to the factor set, the spans, or the
+universe.
 
 Usage:
     uv run scripts/model_diagnostics.py configs/backtest_optimized.json
+
+How to read it: residual |rho| mostly under ~0.2 is fine; a pair above 0.5
+wants a factor or a universe change. Momentum's correlation with the macro
+factor returns near zero justifies the block-diagonal ``F``. A |rho| above 1
+is possible and just means ``D`` is too small for the observed
+cross-covariance -- that is informative, not a bug. Masked assets are the
+factor-defining ETFs.
 """
 
 from __future__ import annotations

@@ -4,6 +4,18 @@ The three questions, from the 2026-10-06 spike: does the diagonal ``D`` hide
 shared residual risk, is the momentum factor really separate from the macro
 block, and are the betas stable enough to size on. Attribution tolerates all
 three being wrong; an optimizer does not.
+
+Run these by hand, not during a backtest -- before you trust the model for
+sizing, and again after any change to the factor set, the spans, or the
+universe. ``scripts/model_diagnostics.py`` is the entry point:
+``uv run scripts/model_diagnostics.py configs/backtest_optimized.json``.
+
+How to read the results: residual |rho| mostly under ~0.2 is fine; a pair
+above 0.5 wants a factor or a universe change. Momentum's correlation with
+the macro factor returns near zero justifies the block-diagonal ``F``. A
+|rho| above 1 is possible -- it means ``D`` is too small for the observed
+cross-covariance, which is informative, not a bug. Masked assets are the
+factor-defining ETFs.
 """
 
 from __future__ import annotations

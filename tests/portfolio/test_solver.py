@@ -6,7 +6,7 @@ import cvxpy as cp
 import numpy as np
 import pytest
 
-from trading_strategies.portfolio.solver import OptimizerParams, solve_weights
+from trading_strategies.portfolio.solver import OptimizerParams, _binding_constraint, solve_weights
 from trading_strategies.risk.model import RiskModelSnapshot
 
 
@@ -159,3 +159,9 @@ def test_an_empty_universe_returns_the_previous_weights() -> None:
 
     assert result.weights.size == 0
     assert result.status == "empty"
+
+
+def test_binding_constraint_reports_both_when_vol_and_leverage_tie() -> None:
+    params = OptimizerParams(target_vol=0.10, max_gross=1.0)
+
+    assert _binding_constraint(vol=0.10, gross=1.0, params=params) == "both"
