@@ -38,7 +38,7 @@ def test_from_json_loads_shipped_config() -> None:
     config_path = Path(__file__).parent.parent / "configs" / "backtest_macd.json"
     config = MacdBacktestConfig.from_json(config_path)
 
-    assert len(config.tickers) == 60
+    assert len(config.tickers) == 61
     assert config.target_vol == 0.15
     assert config.cost_bps == 0.0
     assert config.commission_bps == 0.0
@@ -49,7 +49,7 @@ def test_from_json_loads_shipped_rescaled_config() -> None:
     config_path = Path(__file__).parent.parent / "configs" / "backtest_macd_rescaled.json"
     config = MacdBacktestConfig.from_json(config_path)
 
-    assert len(config.tickers) == 60
+    assert len(config.tickers) == 61
     assert config.target_vol == 0.15
     assert config.portfolio == "rescaled_target_vol"
 
@@ -119,10 +119,11 @@ def test_optimized_requires_granular_factors(tmp_path: Path) -> None:
         MacdBacktestConfig.from_json(path)
 
 
-def test_shipped_configs_hold_the_sixty_ticker_universe() -> None:
-    """PFF is deliberately absent: the risk model explains ~92% of its
-    variance with Rates/Credit/Equity and the leftover tracks European equity
-    markets, so an optimizer would use it as a hedge it cannot be."""
+def test_shipped_configs_hold_the_full_universe() -> None:
+    """PFF stays in the universe: the risk model explains it almost fully,
+    so the diagnostics mask it instead of reporting a noise-over-noise
+    correlation. Dropping it from the universe changed Sharpe by nothing
+    (0.20 either way), so no fetched ETF is excluded on discretion."""
     configs_dir = Path(__file__).parent.parent / "configs"
     expected_portfolios = {
         "backtest_macd.json": "target_vol",
@@ -131,6 +132,6 @@ def test_shipped_configs_hold_the_sixty_ticker_universe() -> None:
     }
     for name, expected_portfolio in expected_portfolios.items():
         config = MacdBacktestConfig.from_json(configs_dir / name)
-        assert len(config.tickers) == 60, name
-        assert "PFF" not in config.tickers, name
+        assert len(config.tickers) == 61, name
+        assert "PFF" in config.tickers, name
         assert config.portfolio == expected_portfolio, name
