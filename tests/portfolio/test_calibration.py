@@ -6,6 +6,7 @@ import pytest
 
 from trading_strategies.portfolio.calibration import (
     SweepRow,
+    align_to_next_return,
     bias_statistic,
     fold_table,
     select_shrinkage,
@@ -42,6 +43,52 @@ def test_bias_statistic_ignores_bars_without_a_forecast() -> None:
 
 def test_bias_statistic_is_nan_with_too_few_observations() -> None:
     assert np.isnan(bias_statistic(_series([0.01]), _series([0.005])))
+
+
+def test_align_to_next_return_holds_the_forward_return_at_each_bar() -> None:
+    """``result[t] == log(equity[t + 1] / equity[t])``, and ``nan`` at the last bar.
+
+    Pins the direction arithmetically on an explicit path, so the helper cannot
+    drift to the return *into* ``t`` without failing here.
+    """
+    equity = _series([100.0, 110.0, 99.0, 123.75, 118.8])
+
+    aligned = align_to_next_return(equity)
+
+    assert aligned.iloc[0] == pytest.approx(np.log(110.0 / 100.0))
+    assert aligned.iloc[1] == pytest.approx(np.log(99.0 / 110.0))
+    assert aligned.iloc[3] == pytest.approx(np.log(118.8 / 123.75))
+    assert np.isnan(aligned.iloc[-1])
+    assert aligned.index.equals(equity.index)
+    # the return *into* bar 1 is the opposite sign here, so the two cannot be confused
+    assert aligned.iloc[1] < 0 < aligned.iloc[0]
+
+
+def test_align_to_next_return_changes_the_bias_statistic() -> None:
+    """Removing the shift inside the helper must turn a test red.
+
+    One bar carries both a large forecast and the large move that follows it.
+    Through the helper every standardized observation is ``+-1``; against the
+    unshifted log returns the big move lands on the next bar's small forecast
+    and leaves a ratio of 20 in the series.
+    """
+    size = 120
+    jump = 50
+    steps = [0.01 * (-1) ** i for i in range(size - 1)]
+    steps[jump] = 0.20
+    equity = _series([100.0, *(100.0 * np.exp(np.cumsum(steps)))])
+    forecast_values = [0.01] * size
+    forecast_values[jump] = 0.20
+    forecast = _series(forecast_values)
+    # computed independently of the helper, so the comparison stays honest
+    unshifted = pd.Series(np.log(equity.to_numpy()), index=equity.index, dtype=float).diff()
+
+    through_helper = bias_statistic(forecast, align_to_next_return(equity))
+    without_the_shift = bias_statistic(forecast, unshifted)
+
+    assert through_helper == pytest.approx(1.0, abs=0.05)
+    assert without_the_shift > 1.8
+    assert abs(through_helper - 1.0) < abs(without_the_shift - 1.0)
 
 
 def test_bias_statistic_needs_the_next_bars_return() -> None:

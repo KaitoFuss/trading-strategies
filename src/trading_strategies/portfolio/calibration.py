@@ -15,11 +15,32 @@ import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+import numpy as np
 import pandas as pd
 
 # (calibration ends before, evaluation ends before); calibration starts at bar 1.
 FOLDS: tuple[tuple[int, int], ...] = ((2013, 2017), (2017, 2021), (2021, 2024), (2024, 2026))
 _BAND = (0.95, 1.05)
+
+
+def align_to_next_return(equity: pd.Series[float]) -> pd.Series[float]:
+    """Log returns, shifted so index ``t`` holds the return the forecast at ``t``
+    is responsible for.
+
+    The engine marks equity for bar ``t`` before the portfolio solves at ``t``,
+    and that solve already sees bar ``t``'s close, so the forecast logged at
+    ``t`` governs the return from ``t`` to ``t+1``. Pairing it with the return
+    *into* ``t`` would score a forecast against a move already inside the
+    estimation window of the covariance that produced it, which biases the
+    statistic downward under volatility clustering.
+
+    The result therefore holds ``log(equity[t+1] / equity[t])`` at ``t``, and
+    ``nan`` at the last bar, whose forward return is not yet known. This is the
+    single place the alignment is expressed: every consumer of the bias
+    statistic feeds its realized series through here.
+    """
+    log_equity = pd.Series(np.log(equity.to_numpy()), index=equity.index, dtype=float)
+    return log_equity.diff().shift(-1)
 
 
 def bias_statistic(forecast: pd.Series[float], realized: pd.Series[float]) -> float:

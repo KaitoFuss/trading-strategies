@@ -17,6 +17,7 @@ from backtester.tracker.report import ReportPage, save_report
 
 from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.runner import run_macd_benchmark
+from trading_strategies.portfolio.calibration import align_to_next_return
 from trading_strategies.portfolio.optimized_portfolio import OptimizedPortfolio
 from trading_strategies.portfolio.report_pages import optimizer_pages
 from trading_strategies.risk.attribution import attribute_backtest
@@ -62,8 +63,7 @@ def main() -> None:
                 strategy_portfolio.solve_log,
                 target_vol=config.target_vol,
                 max_gross=config.max_gross,
-                # index ``t`` must hold the return the forecast at ``t`` earns, i.e. t+1's.
-                realized_returns=equity.pct_change().shift(-1).dropna(),
+                realized_returns=align_to_next_return(equity).dropna(),
             )
         )
 
