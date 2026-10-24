@@ -68,7 +68,8 @@ class AttributionResult:
     contributions: pd.DataFrame
     portfolio_returns: pd.Series[float]
     predicted_vol: pd.Series[float]
-    factor_returns: pd.DataFrame
+    factor_returns: pd.DataFrame  # log, like the model; the edge buckets need these
+    simple_factor_returns: pd.DataFrame  # W'(e^r - 1): arithmetic, for factor_regression
     specific_returns: pd.Series[float]  # w'(r - B f)
 
     def standardized_returns(self) -> pd.Series[float]:
@@ -134,16 +135,17 @@ class AttributionResult:
         )
 
     def factor_regression(self) -> FactorRegression:
-        """OLS ``R_t = alpha + sum_k beta_k f_k,t + e_t`` on arithmetic
-        portfolio returns. Contributions plus alpha equal the mean return."""
-        factors = list(self.factor_returns.columns)
+        """OLS ``R_t = alpha + sum_k beta_k f_k,t + e_t``, arithmetic on both
+        sides: log factor returns would leave about ``sigma_p^2 / 2`` in alpha.
+        Contributions plus alpha equal the mean return."""
+        factors = list(self.simple_factor_returns.columns)
         y = np.expm1(self.portfolio_returns.to_numpy(dtype=np.float64))
         n, k = len(y), len(factors) + 1
         if n <= k:
             nan = pd.Series(math.nan, index=factors, dtype=float)
             table = pd.DataFrame({"beta": nan, "t_stat": nan, "contribution": nan})
             return FactorRegression(table, math.nan, math.nan, math.nan)
-        f = self.factor_returns.to_numpy(dtype=np.float64)
+        f = self.simple_factor_returns.to_numpy(dtype=np.float64)
         x = np.column_stack([np.ones(n), f])
         coef = np.linalg.lstsq(x, y, rcond=None)[0]
         residual = y - x @ coef
@@ -196,6 +198,7 @@ def run_attribution(
     portfolio: list[float] = []
     predicted: list[float] = []
     factor_returns: list[dict[str, float]] = []
+    simple_factor_returns: list[dict[str, float]] = []
     specific: list[float] = []
     last_close: dict[Ticker, float] = {}
 
@@ -211,6 +214,8 @@ def run_attribution(
             w = np.array([leg_weights.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
             x = snapshot.exposures(w)
             f = snapshot.factor_returns(asset_returns)
+            simple_returns = {t: math.expm1(r) for t, r in asset_returns.items()}
+            f_simple = snapshot.factor_returns(simple_returns)
             explained = x * f
             r = np.array([asset_returns.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
             portfolio_return = returns_at[timestamp]
@@ -224,6 +229,9 @@ def run_attribution(
             portfolio.append(portfolio_return)
             predicted.append(math.sqrt(snapshot.portfolio_variance(w)))
             factor_returns.append(dict(zip(snapshot.factors, f.tolist(), strict=True)))
+            simple_factor_returns.append(
+                dict(zip(snapshot.factors, f_simple.tolist(), strict=True))
+            )
             specific.append(float(w @ np.nan_to_num(r)) - float(explained.sum()))
         last_close.update(closes)
         model.update(closes)
@@ -240,6 +248,7 @@ def run_attribution(
         portfolio_returns=pd.Series(portfolio, index=dates, dtype=float),
         predicted_vol=pd.Series(predicted, index=dates, dtype=float),
         factor_returns=pd.DataFrame(factor_returns, index=dates).fillna(0.0),
+        simple_factor_returns=pd.DataFrame(simple_factor_returns, index=dates).fillna(0.0),
         specific_returns=pd.Series(specific, index=dates, dtype=float),
     )
 

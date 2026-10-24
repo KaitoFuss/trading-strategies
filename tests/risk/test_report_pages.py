@@ -40,6 +40,9 @@ def _result(n: int = 300) -> AttributionResult:
         portfolio_returns=returns,
         predicted_vol=pd.Series(0.01, index=dates),
         factor_returns=pd.DataFrame({"Equity": returns, "Momentum": returns * 0.3}, index=dates),
+        simple_factor_returns=pd.DataFrame(
+            {"Equity": returns, "Momentum": returns * 0.3}, index=dates
+        ),
         specific_returns=returns * 0.15,
     )
 
@@ -53,6 +56,7 @@ def _empty() -> AttributionResult:
         portfolio_returns=pd.Series(dtype=float, index=dates),
         predicted_vol=pd.Series(dtype=float, index=dates),
         factor_returns=pd.DataFrame(index=dates),
+        simple_factor_returns=pd.DataFrame(index=dates),
         specific_returns=pd.Series(dtype=float, index=dates),
     )
 

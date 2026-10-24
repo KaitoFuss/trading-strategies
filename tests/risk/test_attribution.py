@@ -27,10 +27,11 @@ _WEIGHTS = {"MKT": 0.5, "A": 0.5}
 
 
 def _scenario(
-    n_bars: int = 500, seed: int = 0
+    n_bars: int = 500, seed: int = 0, book: dict[str, float] | None = None
 ) -> tuple[
     list[MarketEvent], list[tuple[datetime, dict[str, float]]], list[tuple[datetime, float]]
 ]:
+    held = _WEIGHTS if book is None else book
     rng = np.random.default_rng(seed)
     closes = {"MKT": 100.0, "A": 100.0, "B": 100.0}
     events: list[MarketEvent] = []
@@ -45,9 +46,9 @@ def _scenario(
             closes["MKT"] *= math.exp(market)
             closes["A"] *= math.exp(0.5 * market + rng.normal(0, 0.005))
             closes["B"] *= math.exp(-market + rng.normal(0, 0.005))
-            value *= 1 + sum(w * (closes[t] / previous[t] - 1) for t, w in _WEIGHTS.items())
+            value *= 1 + sum(w * (closes[t] / previous[t] - 1) for t, w in held.items())
         events.append(MarketEvent(timestamp=ts, bars={t: Bar(close=c) for t, c in closes.items()}))
-        weights.append((ts, {} if i == 0 else dict(_WEIGHTS)))
+        weights.append((ts, {} if i == 0 else dict(held)))
         equity.append((ts, value))
     return events, weights, equity
 
@@ -157,6 +158,7 @@ def _hand_built(exposure: list[float], factor_return: list[float]) -> Attributio
         portfolio_returns=returns,
         predicted_vol=pd.Series(0.01, index=dates),
         factor_returns=f,
+        simple_factor_returns=f,
         specific_returns=pd.Series(0.0, index=dates, dtype=float),
     )
 
@@ -220,6 +222,7 @@ def _regression_result(n: int = 2000, seed: int = 1) -> AttributionResult:
         portfolio_returns=returns,
         predicted_vol=pd.Series(0.01, index=dates),
         factor_returns=f,
+        simple_factor_returns=f,
         specific_returns=pd.Series(0.0, index=dates, dtype=float),
     )
 
@@ -249,3 +252,16 @@ def test_factor_regression_on_too_few_bars_is_nan() -> None:
     assert math.isnan(regression.alpha)
     assert math.isnan(regression.r_squared)
     assert regression.table["beta"].isna().all()
+
+
+def test_factor_regression_uses_arithmetic_factor_returns(tmp_path: Path) -> None:
+    # The book is 100% MKT and the Market factor is MKT, so in arithmetic
+    # units the fit is exact: alpha 0, beta 1. Log factor returns would leave
+    # an alpha of about +sigma^2 / 2 per bar.
+    events, weights, equity = _scenario(book={"MKT": 1.0})
+    model = FactorRiskModel(["MKT", "A", "B"], market_factor_config(tmp_path))
+
+    regression = run_attribution(events, weights, equity, model).factor_regression()
+
+    assert regression.alpha == pytest.approx(0.0, abs=1e-8)
+    assert regression.table["beta"]["Market"] == pytest.approx(1.0)
