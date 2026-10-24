@@ -61,7 +61,7 @@ class OptimizedPortfolio(BasePortfolio):
         self._params = OptimizerParams(
             target_vol=target_vol,
             max_gross=max_gross,
-            ic=optimizer_config.ic,
+            information_coefficient=optimizer_config.information_coefficient,
             turnover_penalty_bps=optimizer_config.turnover_penalty_bps,
             factor_bounds=optimizer_config.factor_bounds,
         )

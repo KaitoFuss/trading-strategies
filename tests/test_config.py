@@ -78,14 +78,15 @@ def test_portfolio_field_parses_and_defaults(tmp_path: Path) -> None:
     path.write_text(
         '{"name": "X", "data": "d.parquet", "tickers": ["SPY"], "portfolio": "optimized",'
         ' "factor_model": {"factors_file": "f.json", "granular": true},'
-        ' "optimizer": {"ic": 0.1, "factor_bounds": {"Equity": [-0.2, 0.2]}}}'
+        ' "optimizer": {"information_coefficient": 0.1,'
+        ' "factor_bounds": {"Equity": [-0.2, 0.2]}}}'
     )
 
     config = MacdBacktestConfig.from_json(path)
 
     assert config.portfolio == "optimized"
     assert config.optimizer is not None
-    assert config.optimizer.ic == 0.1
+    assert config.optimizer.information_coefficient == 0.1
     assert config.optimizer.factor_bounds == {"Equity": (-0.2, 0.2)}
 
 
@@ -123,11 +124,13 @@ def test_shipped_configs_hold_the_sixty_ticker_universe() -> None:
     variance with Rates/Credit/Equity and the leftover tracks European equity
     markets, so an optimizer would use it as a hedge it cannot be."""
     configs_dir = Path(__file__).parent.parent / "configs"
-    for name in (
-        "backtest_macd.json",
-        "backtest_macd_rescaled.json",
-        "backtest_optimized.json",
-    ):
+    expected_portfolios = {
+        "backtest_macd.json": "target_vol",
+        "backtest_macd_rescaled.json": "rescaled_target_vol",
+        "backtest_optimized.json": "optimized",
+    }
+    for name, expected_portfolio in expected_portfolios.items():
         config = MacdBacktestConfig.from_json(configs_dir / name)
         assert len(config.tickers) == 60, name
         assert "PFF" not in config.tickers, name
+        assert config.portfolio == expected_portfolio, name

@@ -26,7 +26,7 @@
         "momentum": {"lookback": 252, "skip": 21}
     },
     "optimizer": {
-        "ic": 0.05,
+        "information_coefficient": 0.05,
         "turnover_penalty_bps": 5.0,
         "factor_bounds": {}
     }

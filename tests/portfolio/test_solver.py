@@ -65,7 +65,7 @@ def test_vol_constraint_gives_the_mean_variance_direction_under_a_non_trivial_si
     assert result.status == "optimal"
     assert result.binding == "vol"
     score = np.array([1.0, 0.5, -1.0])
-    alpha = params.ic * snapshot.sigma * score
+    alpha = params.information_coefficient * snapshot.sigma * score
     mv_direction = np.linalg.solve(snapshot.covariance(), alpha)
     assert _cosine(result.weights, mv_direction) == pytest.approx(1.0, abs=1e-4)
     assert _cosine(result.weights, alpha) < 0.9

@@ -49,9 +49,12 @@ def run_macd_benchmark(
     ``solve_log``).
     """
 
-    built: list[Portfolio] = []
+    # run_backtest only hands us a price source inside the factory it calls, so the
+    # portfolio it builds has to be captured here, from inside that factory.
+    strategy_portfolio: Portfolio | None = None
 
     def build(price_source: PriceSource) -> Portfolio:
+        nonlocal strategy_portfolio
         if config.portfolio == "optimized":
             assert config.factor_model is not None  # enforced by MacdBacktestConfig
             portfolio: Portfolio = OptimizedPortfolio(
@@ -75,7 +78,7 @@ def run_macd_benchmark(
                 target_vol=config.target_vol,
                 max_gross=config.max_gross,
             )
-        built.append(portfolio)
+        strategy_portfolio = portfolio
         return portfolio
 
     strategy_tracker = run_backtest(
@@ -92,4 +95,6 @@ def run_macd_benchmark(
         lambda portfolio: None,
         config,
     )
-    return {"MACD Benchmark": strategy_tracker, "Buy & Hold": benchmark_tracker}, built[0]
+    if strategy_portfolio is None:  # run_backtest always calls the factory
+        raise RuntimeError("run_backtest did not build the strategy portfolio")
+    return {"MACD Benchmark": strategy_tracker, "Buy & Hold": benchmark_tracker}, strategy_portfolio

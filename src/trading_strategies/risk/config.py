@@ -32,7 +32,7 @@ class FactorModelConfig:
 
 @dataclass(frozen=True)
 class OptimizerConfig:
-    ic: float = 0.05
+    information_coefficient: float = 0.05
     turnover_penalty_bps: float = 5.0
     factor_bounds: Mapping[str, tuple[float, float]] = field(default_factory=dict)
 
