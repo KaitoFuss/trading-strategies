@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
@@ -21,6 +22,7 @@ from backtester.tracker.report import (
     ReportPage,
     new_page,
     save_page,
+    save_table_pages,
     style_table,
 )
 from matplotlib.axes import Axes
@@ -29,6 +31,7 @@ from matplotlib.textpath import TextPath
 from matplotlib.ticker import PercentFormatter
 
 from trading_strategies.risk.attribution import AttributionResult
+from trading_strategies.risk.factors import load_factors
 from trading_strategies.risk.model import IDIOSYNCRATIC
 
 _ANNUAL = math.sqrt(TRADING_DAYS_PER_YEAR)
@@ -334,3 +337,37 @@ def attribution_pages(results: Mapping[str, AttributionResult]) -> list[ReportPa
         FactorRegressionPage(results),
         ModelHealthPage(results),
     ]
+
+
+@dataclass(frozen=True)
+class FactorDefinitionsPage:
+    """Every factor in ``factors_file``, so the report shows what the factor
+    model was built from, not just the file's path. Granular factors are
+    listed even when the run leaves them out (``granular=False``), marked
+    inactive, so the page matches the run either way."""
+
+    factors_file: Path
+    granular: bool
+
+    def render(self, pdf: PdfPages) -> None:
+        rows = [
+            [
+                factor.name,
+                str(factor.level),
+                "yes" if factor.granular else "no",
+                "yes" if self.granular or not factor.granular else "no",
+                ", ".join(f"{ticker} {weight:+.2f}" for ticker, weight in factor.weights.items()),
+            ]
+            for factor in load_factors(self.factors_file, granular=True)
+        ]
+        state = "active" if self.granular else "inactive"
+        save_table_pages(
+            pdf,
+            "Factor Definitions",
+            rows,
+            ["Factor", "Level", "Granular", "Active", "Weights"],
+            col_widths=[0.22, 0.07, 0.09, 0.07, 0.55],
+            wrap_widths=[None, None, None, None, 80],
+            subtitle=f"From {self.factors_file}. granular={self.granular}, "
+            f"so granular factors are {state} in this run.",
+        )
