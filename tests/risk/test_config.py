@@ -57,27 +57,21 @@ def test_optimizer_objective_defaults_to_linear() -> None:
 
     assert config.objective == "linear"
     assert config.risk_aversion is None
-    assert config.vol_cap is None
 
 
 def test_optimizer_parses_mean_variance() -> None:
-    config = OptimizerConfig.from_dict(
-        {"objective": "mean_variance", "risk_aversion": 30.0, "vol_cap": 0.25}
-    )
+    config = OptimizerConfig.from_dict({"objective": "mean_variance", "risk_aversion": 30.0})
 
     assert config.objective == "mean_variance"
     assert config.risk_aversion == 30.0
-    assert config.vol_cap == 0.25
 
 
 @pytest.mark.parametrize(
     ("raw", "message"),
     [
         ({"objective": "quadratic"}, "objective"),
-        ({"objective": "mean_variance", "vol_cap": 0.25}, "risk_aversion"),
-        ({"objective": "mean_variance", "risk_aversion": 0.0, "vol_cap": 0.25}, "risk_aversion"),
-        ({"objective": "mean_variance", "risk_aversion": 30.0}, "vol_cap"),
-        ({"objective": "mean_variance", "risk_aversion": 30.0, "vol_cap": -0.1}, "vol_cap"),
+        ({"objective": "mean_variance"}, "risk_aversion"),
+        ({"objective": "mean_variance", "risk_aversion": 0.0}, "risk_aversion"),
     ],
 )
 def test_invalid_mean_variance_settings_are_rejected(raw: dict[str, object], message: str) -> None:

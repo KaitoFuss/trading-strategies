@@ -2,13 +2,14 @@
 
 Two objectives, both under a gross-leverage cap (plus optional factor bounds):
 
-- ``linear``: ``maximize alpha'w - turnover_penalty*||w - w_prev||_1`` subject to
-  ex-ante vol <= ``target_vol``. The objective is linear, so the book sits on a
-  limit almost every bar and its size ignores the signal's strength.
+- ``linear``: ``maximize alpha'w - turnover_penalty*||w - w_prev||_1``. The
+  objective is linear, so the book sits on a limit almost every bar and its size
+  ignores the signal's strength.
 - ``mean_variance``: ``maximize alpha'w - (risk_aversion/2) w'Sigma w -
-  turnover_penalty*||w - w_prev||_1`` subject to ex-ante vol <= ``vol_cap``. The
-  book's size follows the signal; the cap is a safety limit that should rarely
-  bind.
+  turnover_penalty*||w - w_prev||_1``. The book's size follows the signal; the
+  vol limit is a safety cap that should rarely bind.
+
+Both are subject to ex-ante vol <= ``target_vol``.
 
 Convex SOCP, solved with cvxpy/Clarabel. Kept free of engine types so it can be
 tested on hand-built snapshots.
@@ -62,10 +63,9 @@ class OptimizerParams:
     """
     objective: Objective = "linear"
     risk_aversion: float | None = None  # daily units; mean_variance only
-    vol_cap: float | None = None  # annualized; mean_variance only
 
     def __post_init__(self) -> None:
-        validate_objective(self.objective, self.risk_aversion, self.vol_cap)
+        validate_objective(self.objective, self.risk_aversion)
 
 
 @dataclass(frozen=True)
@@ -94,7 +94,7 @@ def solve_weights(
     # is comparable with the turnover penalty.
     score = np.array([scores.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
     alpha = params.information_coefficient * snapshot.sigma * score
-    target_daily = params.target_vol / np.sqrt(TRADING_DAYS_PER_YEAR)
+    vol_limit = params.target_vol / np.sqrt(TRADING_DAYS_PER_YEAR)
     turnover_penalty = params.turnover_penalty_bps / 1e4
 
     values, vectors = np.linalg.eigh(snapshot.F)
@@ -110,12 +110,9 @@ def solve_weights(
     turnover = turnover_penalty * cp.norm1(w - w_prev)  # type: ignore[attr-defined]
     if params.objective == "mean_variance":
         assert params.risk_aversion is not None
-        assert params.vol_cap is not None
-        vol_limit = params.vol_cap / np.sqrt(TRADING_DAYS_PER_YEAR)
         variance_penalty = params.risk_aversion / 2 * cp.sum_squares(stacked)  # type: ignore[attr-defined]
         objective = cp.Maximize(alpha @ w - variance_penalty - turnover)
     else:
-        vol_limit = target_daily
         objective = cp.Maximize(alpha @ w - turnover)
     constraints = [risk <= vol_limit, cp.norm1(w) <= params.max_gross]  # type: ignore[attr-defined]
     for name, (low, high) in params.factor_bounds.items():
@@ -140,9 +137,7 @@ def _binding_constraint(vol: float, gross: float, params: OptimizerParams) -> st
     or neither. Neither means the turnover penalty held the book where it was
     (``linear``), or the optimum is interior (``mean_variance``). Drives the
     "binding" row on the Optimizer Diagnostics page."""
-    mean_variance = params.objective == "mean_variance"
-    vol_limit = params.vol_cap if mean_variance and params.vol_cap else params.target_vol
-    at_vol = vol >= vol_limit * (1.0 - _BINDING_TOLERANCE)
+    at_vol = vol >= params.target_vol * (1.0 - _BINDING_TOLERANCE)
     at_gross = gross >= params.max_gross * (1.0 - _BINDING_TOLERANCE)
     if at_vol and at_gross:
         return "both"
@@ -150,4 +145,4 @@ def _binding_constraint(vol: float, gross: float, params: OptimizerParams) -> st
         return "vol"
     if at_gross:
         return "leverage"
-    return "interior" if mean_variance else "turnover"
+    return "interior" if params.objective == "mean_variance" else "turnover"

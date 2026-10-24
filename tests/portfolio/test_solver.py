@@ -167,14 +167,13 @@ def test_binding_constraint_reports_both_when_vol_and_leverage_tie() -> None:
     assert _binding_constraint(vol=0.10, gross=1.0, params=params) == "both"
 
 
-def _mean_variance(risk_aversion: float, *, vol_cap: float = 10.0) -> OptimizerParams:
+def _mean_variance(risk_aversion: float, *, target_vol: float = 10.0) -> OptimizerParams:
     return OptimizerParams(
-        target_vol=0.15,
+        target_vol=target_vol,
         max_gross=100.0,
         turnover_penalty_bps=0.0,
         objective="mean_variance",
         risk_aversion=risk_aversion,
-        vol_cap=vol_cap,
     )
 
 
@@ -202,23 +201,11 @@ def test_mean_variance_book_shrinks_as_risk_aversion_rises() -> None:
     assert high.ex_ante_vol == pytest.approx(low.ex_ante_vol / 4.0, rel=1e-3)
 
 
-def test_mean_variance_vol_cap_binds_when_risk_aversion_is_small() -> None:
+def test_mean_variance_target_vol_binds_when_risk_aversion_is_small() -> None:
     snapshot = _snapshot()
-    params = _mean_variance(0.01, vol_cap=0.25)
+    params = _mean_variance(0.01, target_vol=0.25)
 
     result = solve_weights({"T0": 1.0, "T1": 0.5, "T2": -1.0}, snapshot, np.zeros(3), params)
 
     assert result.ex_ante_vol == pytest.approx(0.25, rel=1e-3)
     assert result.binding == "vol"
-
-
-def test_linear_objective_ignores_the_vol_cap() -> None:
-    # The linear objective keeps target_vol as its constraint.
-    snapshot = _snapshot()
-    params = OptimizerParams(
-        target_vol=0.10, max_gross=100.0, turnover_penalty_bps=0.0, vol_cap=0.25
-    )
-
-    result = solve_weights({"T0": 1.0, "T1": 0.5, "T2": -1.0}, snapshot, np.zeros(3), params)
-
-    assert result.ex_ante_vol == pytest.approx(0.10, rel=1e-3)

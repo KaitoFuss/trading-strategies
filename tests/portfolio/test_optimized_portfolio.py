@@ -150,9 +150,7 @@ def test_keeps_previous_weights_when_the_solver_status_is_not_optimal(
 
 
 def test_mean_variance_settings_reach_the_solver(tmp_path: Path) -> None:
-    portfolio, source = _portfolio(
-        tmp_path, objective="mean_variance", risk_aversion=1000.0, vol_cap=10.0
-    )
+    portfolio, source = _portfolio(tmp_path, objective="mean_variance", risk_aversion=1000.0)
 
     _drive(portfolio, source, 80)
 

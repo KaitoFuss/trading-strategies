@@ -66,7 +66,6 @@ class OptimizedPortfolio(BasePortfolio):
             factor_bounds=optimizer_config.factor_bounds,
             objective=optimizer_config.objective,
             risk_aversion=optimizer_config.risk_aversion,
-            vol_cap=optimizer_config.vol_cap,
         )
         self.solve_log: list[SolveLogEntry] = []
 
