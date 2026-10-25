@@ -79,18 +79,18 @@ def test_invalid_mean_variance_settings_are_rejected(raw: dict[str, object], mes
         OptimizerConfig.from_dict(raw)
 
 
-def test_idiosyncratic_risk_defaults_to_implied() -> None:
+def test_idiosyncratic_risk_defaults_to_residual() -> None:
     config = FactorModelConfig.from_dict({"factors_file": "f.json"})
 
-    assert config.idiosyncratic_risk == "implied"
+    assert config.idiosyncratic_risk == "residual"
 
 
-def test_idiosyncratic_risk_parses_residual() -> None:
+def test_idiosyncratic_risk_parses_implied() -> None:
     config = FactorModelConfig.from_dict(
-        {"factors_file": "f.json", "idiosyncratic_risk": "residual"}
+        {"factors_file": "f.json", "idiosyncratic_risk": "implied"}
     )
 
-    assert config.idiosyncratic_risk == "residual"
+    assert config.idiosyncratic_risk == "implied"
 
 
 def test_idiosyncratic_risk_rejects_unknown_value() -> None:
@@ -105,4 +105,4 @@ def test_shipped_configs_set_idiosyncratic_risk_explicitly(name: str) -> None:
     path = Path(__file__).resolve().parents[2] / "configs" / name
     raw = json.loads(path.read_text())
 
-    assert raw["factor_model"]["idiosyncratic_risk"] in ("implied", "residual")
+    assert raw["factor_model"]["idiosyncratic_risk"] == "residual"

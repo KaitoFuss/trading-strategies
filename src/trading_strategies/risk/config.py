@@ -37,7 +37,7 @@ class FactorModelConfig:
     corr_span: int = 250
     corr_min_periods: int = 250
     residual_floor: float = 0.10
-    idiosyncratic_risk: IdiosyncraticRisk = "implied"
+    idiosyncratic_risk: IdiosyncraticRisk = "residual"
     momentum: MomentumConfig = field(default_factory=MomentumConfig)
 
     def __post_init__(self) -> None:

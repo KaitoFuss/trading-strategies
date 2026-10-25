@@ -170,7 +170,9 @@ def _unsplit_covariance(model: FactorRiskModel, snapshot: RiskModelSnapshot) -> 
 def test_exposures_stay_in_real_units_after_a_vol_jump(tmp_path: Path) -> None:
     jump_at = 700
     path = _simulate_vol_jump(1000, jump_at)
-    config = market_factor_config(tmp_path, vol_span=60, corr_span=250, corr_min_periods=250)
+    config = market_factor_config(
+        tmp_path, vol_span=60, corr_span=250, corr_min_periods=250, idiosyncratic_risk="implied"
+    )
     model = FactorRiskModel(["MKT", "A"], config)
 
     for bar, closes in enumerate(path):
@@ -224,7 +226,8 @@ def test_model_variance_never_exceeds_the_floored_total(tmp_path: Path) -> None:
     Σ_ii <= sigma_i^2 * 1.1 for every asset. Before the cap, factor-defining
     assets came out far above that."""
     path = _simulate(400, {"A": 0.5, "B": -1.0, "C": 0.2})
-    snapshot = _run(FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path)), path)
+    config = market_factor_config(tmp_path, idiosyncratic_risk="implied")
+    snapshot = _run(FactorRiskModel(["MKT", "A", "B", "C"], config), path)
 
     total = np.diag(snapshot.covariance())
     assert np.all(total <= snapshot.sigma**2 * (1.0 + 0.10) + 1e-12)
@@ -412,7 +415,7 @@ def test_late_ticker_uses_the_implied_d_until_warm(tmp_path: Path) -> None:
         for i, closes in enumerate(path)
     ]
     tickers = ["MKT", *_NOISY]
-    implied = FactorRiskModel(tickers, market_factor_config(tmp_path))
+    implied = FactorRiskModel(tickers, market_factor_config(tmp_path, idiosyncratic_risk="implied"))
     residual = FactorRiskModel(
         tickers, market_factor_config(tmp_path, idiosyncratic_risk="residual")
     )
