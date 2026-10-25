@@ -6,7 +6,12 @@ from pathlib import Path
 import pytest
 
 from trading_strategies.config import MacdBacktestConfig
-from trading_strategies.risk.config import FactorModelConfig, MomentumConfig, OptimizerConfig
+from trading_strategies.risk.config import (
+    EigenAdjustmentConfig,
+    FactorModelConfig,
+    MomentumConfig,
+    OptimizerConfig,
+)
 
 
 def test_from_dict_applies_defaults() -> None:
@@ -106,3 +111,43 @@ def test_shipped_configs_set_idiosyncratic_risk_explicitly(name: str) -> None:
     raw = json.loads(path.read_text())
 
     assert raw["factor_model"]["idiosyncratic_risk"] == "residual"
+
+
+def test_eigen_adjustment_defaults_to_off() -> None:
+    config = FactorModelConfig.from_dict({"factors_file": "f.json"})
+
+    assert config.eigen_adjustment == EigenAdjustmentConfig()
+    assert config.eigen_adjustment.enabled is False
+    assert config.eigen_adjustment.scale == 1.4
+
+
+def test_eigen_adjustment_parses_nested_block() -> None:
+    config = FactorModelConfig.from_dict(
+        {
+            "factors_file": "f.json",
+            "eigen_adjustment": {"enabled": True, "simulations": 50, "window": 300},
+        }
+    )
+
+    assert config.eigen_adjustment == EigenAdjustmentConfig(
+        enabled=True, simulations=50, window=300
+    )
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [{"scale": -0.1}, {"simulations": 0}, {"refresh_every": 0}, {"window": 1}],
+)
+def test_eigen_adjustment_rejects_bad_values(fields: dict[str, float]) -> None:
+    with pytest.raises(ValueError, match="eigen_adjustment"):
+        EigenAdjustmentConfig(**fields)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "name", ["backtest_macd.json", "backtest_macd_rescaled.json", "backtest_optimized.json"]
+)
+def test_shipped_configs_set_eigen_adjustment_explicitly(name: str) -> None:
+    path = Path(__file__).resolve().parents[2] / "configs" / name
+    block = json.loads(path.read_text())["factor_model"]["eigen_adjustment"]
+
+    assert set(block) == {"enabled", "scale", "simulations", "window", "refresh_every", "seed"}

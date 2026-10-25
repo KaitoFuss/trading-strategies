@@ -30,6 +30,32 @@ class MomentumConfig:
 
 
 @dataclass(frozen=True)
+class EigenAdjustmentConfig:
+    """Eigenfactor risk adjustment of ``F`` (``risk/eigen_adjustment.py``).
+    ``window=None`` means ``3 * corr_span``. ``v`` is re-simulated every
+    ``refresh_every`` bars and reused in between."""
+
+    enabled: bool = False
+    scale: float = 1.4
+    simulations: int = 200
+    window: int | None = None
+    refresh_every: int = 21
+    seed: int = 0
+
+    def __post_init__(self) -> None:
+        if self.scale < 0:
+            raise ValueError(f"eigen_adjustment.scale must be >= 0, got {self.scale}")
+        if self.simulations < 1:
+            raise ValueError(f"eigen_adjustment.simulations must be >= 1, got {self.simulations}")
+        if self.refresh_every < 1:
+            raise ValueError(
+                f"eigen_adjustment.refresh_every must be >= 1, got {self.refresh_every}"
+            )
+        if self.window is not None and self.window < 2:
+            raise ValueError(f"eigen_adjustment.window must be >= 2, got {self.window}")
+
+
+@dataclass(frozen=True)
 class FactorModelConfig:
     factors_file: str
     granular: bool = False
@@ -39,6 +65,7 @@ class FactorModelConfig:
     residual_floor: float = 0.10
     idiosyncratic_risk: IdiosyncraticRisk = "residual"
     momentum: MomentumConfig = field(default_factory=MomentumConfig)
+    eigen_adjustment: EigenAdjustmentConfig = field(default_factory=EigenAdjustmentConfig)
 
     def __post_init__(self) -> None:
         if self.idiosyncratic_risk not in _IDIOSYNCRATIC_RISKS:
@@ -51,7 +78,8 @@ class FactorModelConfig:
     def from_dict(cls, raw: dict[str, Any]) -> Self:
         fields = dict(raw)
         momentum = MomentumConfig(**fields.pop("momentum", {}))
-        return cls(momentum=momentum, **fields)
+        eigen_adjustment = EigenAdjustmentConfig(**fields.pop("eigen_adjustment", {}))
+        return cls(momentum=momentum, eigen_adjustment=eigen_adjustment, **fields)
 
 
 @dataclass(frozen=True)
