@@ -17,7 +17,8 @@ by ``g g^T`` and ``B`` divided by ``g`` (``g`` = short-span / long-span factor
 vol), which leaves ``Sigma`` unchanged but keeps exposures in real units, the
 units of the realized factor returns. Everything is in daily units, and
 streaming/causal: the snapshot after ``update(bar t)`` uses data up to and
-including bar t only.
+including bar t only. With ``eigen_adjustment.enabled``, ``F`` gets the eigenfactor risk
+adjustment of Menchero, Wang & Orr (``risk/eigen_adjustment.py``).
 """
 
 from __future__ import annotations
@@ -31,6 +32,7 @@ import numpy as np
 from backtester.core.events import Ticker
 
 from trading_strategies.risk.config import FactorModelConfig
+from trading_strategies.risk.eigen_adjustment import eigen_adjust, ewm_weights, simulated_eigen_bias
 from trading_strategies.risk.factors import factor_weight_matrix, load_factors, residualize
 from trading_strategies.risk.style_factors import MomentumSignal, momentum_exposures
 from trading_strategies.utils.streaming import EwmCovariance, EwmMoments, FloatArray
@@ -229,6 +231,10 @@ class FactorRiskModel:
         self._residual_var = {
             t: EwmMoments(span=config.vol_span, min_periods=config.vol_span) for t in self._tickers
         }
+        # Eigenfactor risk adjustment (eigen_adjustment.enabled): the
+        # simulated bias v(k) is reused for refresh_every ready bars.
+        self._eigen_bias: FloatArray | None = None
+        self._bars_since_eigen_refresh = 0
         self._last_close: dict[Ticker, float] = {}
         self._snapshot = RiskModelSnapshot.empty()
 
@@ -369,6 +375,35 @@ class FactorRiskModel:
         )
         return b, f, np.append(g, g_momentum), names, momentum
 
+    def _adjust_eigen(self, f: FloatArray) -> FloatArray:
+        """Eigenfactor risk adjustment of the long-span factor covariance.
+        ``v`` depends only on the shape of the eigenvalue spectrum, which moves
+        slowly, so it is re-simulated every ``refresh_every`` ready bars (one
+        simulation is about 34 ms at K = 18), and whenever the number of
+        factors changes. A fresh ``default_rng(seed)`` each time keeps
+        backtests reproducible."""
+        config = self._config.eigen_adjustment
+        if not config.enabled:
+            return f
+        stale = (
+            self._eigen_bias is None
+            or len(self._eigen_bias) != len(f)
+            or self._bars_since_eigen_refresh >= config.refresh_every
+        )
+        if stale:
+            span = self._config.corr_span
+            weights = ewm_weights(span, config.window or 3 * span)
+            self._eigen_bias = simulated_eigen_bias(
+                np.linalg.eigvalsh(f),
+                weights,
+                config.simulations,
+                np.random.default_rng(config.seed),
+            )
+            self._bars_since_eigen_refresh = 0
+        self._bars_since_eigen_refresh += 1
+        assert self._eigen_bias is not None
+        return eigen_adjust(f, self._eigen_bias, config.scale)
+
     def _finalize(
         self,
         tickers: tuple[Ticker, ...],
@@ -397,6 +432,9 @@ class FactorRiskModel:
             idiosyncratic = implied
         else:
             idiosyncratic = self._measured_idiosyncratic(tickers, sigma, implied)
+        # After cap_common and the implied D, which use the estimated f: the
+        # adjustment corrects the forecast, not the betas or D.
+        f = self._adjust_eigen(f)
         # Sigma = diag(scale) (b f b^T + D) diag(scale), split so that F has
         # short-span factor vols and B stays in real units.
         arrays = [
