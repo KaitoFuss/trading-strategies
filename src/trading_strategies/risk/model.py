@@ -4,8 +4,9 @@ docs/superpowers/specs/2026-09-22-factor-risk-model-design.md).
 Macro factors are fixed ETF portfolios, residualized level by level, with
 time-series betas projected from one long-span EWM covariance ``S``:
 ``F = W'^T S W'``, ``B = S W' F^-1``. Momentum is characteristic-based: the
-exposure is the standardized 12-1 month return, and the factor return is a
-cross-sectional regression of macro residual returns on it. Idiosyncratic risk
+exposure is the standardized, vol-scaled 12-1 month return, residualized
+against the macro betas per unit of risk and then put in return units, and the
+factor return is a cross-sectional regression of macro residual returns on it. Idiosyncratic risk
 is floored at ``residual_floor * S_ii``. ``B`` and ``D`` are then rescaled by
 ``sigma_short / sqrt(S_ii)``, so short-span vols ride on long-span
 correlations. The factor side carries its own short-span vol: ``F`` is scaled
@@ -257,7 +258,7 @@ class FactorRiskModel:
             return RiskModelSnapshot.empty()
         factor_weights, macro_betas, f_macro, names, g = macro
         b, f, g, names, momentum = self._append_momentum(
-            tickers, sigma, macro_betas, f_macro, names, g
+            tickers, sigma, np.sqrt(np.diag(s)), macro_betas, f_macro, names, g
         )
         return self._finalize(
             tickers, s, sigma, b, f, g, factor_weights, macro_betas, names, momentum
@@ -286,6 +287,7 @@ class FactorRiskModel:
         self,
         tickers: tuple[Ticker, ...],
         sigma: FloatArray,
+        long_vol: FloatArray,
         macro_betas: FloatArray,
         f_macro: FloatArray,
         names: list[str],
@@ -298,11 +300,13 @@ class FactorRiskModel:
         orthogonal to the macro factor returns by construction, which keeps
         ``F`` block-diagonal. The *exposure* column does need residualization:
         the characteristic itself carries macro content (on real data,
-        corr = -0.53 with Credit beta), so the next line residualizes it
-        against ``macro_betas``."""
+        corr = -0.53 with Credit beta). ``risk_adjusted_exposure`` removes it
+        per unit of risk and puts the result in return units, like the macro
+        betas. ``long_vol`` is long-span (``sqrt(S_ii)``) because
+        ``_finalize`` rescales ``B`` by ``sigma / sqrt(S_ii)`` afterwards."""
         momentum = self._momentum_exposure(tickers, sigma)
         if momentum is not None:
-            momentum = residualize_exposure(momentum, macro_betas)
+            momentum = risk_adjusted_exposure(momentum, macro_betas, long_vol)
         momentum_std = self._momentum_var.std
         if momentum is None or not momentum_std:
             return macro_betas, f_macro, g, names, momentum
