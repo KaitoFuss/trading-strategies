@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, get_args
 
 Objective = Literal["linear", "mean_variance"]
-_OBJECTIVES = ("linear", "mean_variance")
+_OBJECTIVES = get_args(Objective)
 IdiosyncraticRisk = Literal["implied", "residual"]
-_IDIOSYNCRATIC_RISKS = ("implied", "residual")
+_IDIOSYNCRATIC_RISKS = get_args(IdiosyncraticRisk)
 
 
 def validate_objective(objective: str, risk_aversion: float | None) -> None:

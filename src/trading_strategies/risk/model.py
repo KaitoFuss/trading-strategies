@@ -223,8 +223,9 @@ class FactorRiskModel:
         self._momentum_var = EwmMoments(span=config.corr_span, min_periods=config.vol_span)
         self._momentum_short_var = EwmMoments(span=config.vol_span, min_periods=config.vol_span)
         # One EWMA of realized residual returns per ticker, eps_t = r_t -
-        # B_{t-1} f_t (idiosyncratic_risk="residual"). Same span as sigma, so
-        # D lands in the same short-span units without a scale**2 step.
+        # B_{t-1} f_t. Same span as sigma, so D lands in the same short-span
+        # units without a scale**2 step. Updated in both modes (it never feeds
+        # back into B or F); only idiosyncratic_risk="implied" ignores it.
         self._residual_var = {
             t: EwmMoments(span=config.vol_span, min_periods=config.vol_span) for t in self._tickers
         }
@@ -246,8 +247,7 @@ class FactorRiskModel:
         if momentum_return is not None:
             self._momentum_var.update(momentum_return)
             self._momentum_short_var.update(momentum_return)
-        if self._config.idiosyncratic_risk == "residual":
-            self._update_idiosyncratic(returns)
+        self._update_idiosyncratic(returns)
         self._vol.update(returns)
         self._corr.update(returns)
         self._momentum.update(live)
@@ -271,17 +271,13 @@ class FactorRiskModel:
     def _measured_idiosyncratic(
         self, tickers: tuple[Ticker, ...], sigma: FloatArray, implied: FloatArray
     ) -> FloatArray:
-        """Barra-style: D measured from realized residual returns, floored
-        at ``residual_floor * sigma**2`` (the same floor as the implied
-        path). A ticker whose residual EWMA is not warm yet keeps the
-        implied value."""
-        floor = self._config.residual_floor * sigma**2
-        measured = implied.copy()
-        for k, ticker in enumerate(tickers):
-            std = self._residual_var[ticker].std
-            if std is not None:
-                measured[k] = max(float(floor[k]), std * std)
-        return measured
+        """Barra-style: ``D_i = max(residual_floor * sigma_i**2, var(eps_i))``,
+        the same floor as the implied path. A ticker whose residual EWMA is not
+        warm yet (NaN variance) keeps its implied value."""
+        stds = [self._residual_var[t].std for t in tickers]
+        variance = np.array([math.nan if std is None else std * std for std in stds])
+        floored = np.maximum(self._config.residual_floor * sigma**2, variance)
+        return np.where(np.isnan(variance), implied, floored)
 
     def _build(self) -> RiskModelSnapshot:
         corr = self._corr.covariance()
@@ -394,9 +390,13 @@ class FactorRiskModel:
         b, common = cap_common(b, f, s_ii)
         specific = np.maximum(self._config.residual_floor * s_ii, s_ii - common)
         scale = sigma / np.sqrt(s_ii)
-        idiosyncratic = specific * scale**2
-        if self._config.idiosyncratic_risk == "residual":
-            idiosyncratic = self._measured_idiosyncratic(tickers, sigma, idiosyncratic)
+        # Implied D: the explicit "implied" mode, and the fallback for tickers
+        # whose residual EWMA is still cold.
+        implied = specific * scale**2
+        if self._config.idiosyncratic_risk == "implied":
+            idiosyncratic = implied
+        else:
+            idiosyncratic = self._measured_idiosyncratic(tickers, sigma, implied)
         # Sigma = diag(scale) (b f b^T + D) diag(scale), split so that F has
         # short-span factor vols and B stays in real units.
         arrays = [
