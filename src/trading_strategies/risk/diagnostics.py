@@ -117,7 +117,12 @@ def residual_correlations(
 def exposure_collinearity(snapshot: RiskModelSnapshot) -> pd.Series[float]:
     """Cross-sectional correlation of the momentum exposure with each macro
     beta. Near-collinear ``B`` columns make an optimizer build large offsetting
-    positions, and a bound on one factor then binds on another."""
+    positions, and a bound on one factor then binds on another.
+
+    Plain units, so not zero by design: the model removes the overlap per unit
+    of risk (``risk_adjusted_exposure``), and both columns scale with the
+    asset's vol. Values up to about 0.4 are that shared size, not
+    collinearity (cond(B) did not change). Worry about values near 1."""
     if snapshot.momentum is None or MOMENTUM not in snapshot.factors:
         return pd.Series(dtype=float)
     macro_names = [name for name in snapshot.factors if name != MOMENTUM]

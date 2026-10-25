@@ -15,6 +15,7 @@ from trading_strategies.risk.model import (
     RiskModelSnapshot,
     cap_common,
     residualize_exposure,
+    risk_adjusted_exposure,
 )
 from trading_strategies.utils.streaming import FloatArray
 
@@ -280,15 +281,100 @@ def test_residualize_exposure_returns_none_without_dispersion() -> None:
     assert residualize_exposure(exposure, betas) is None
 
 
-def test_momentum_exposure_is_orthogonal_to_the_macro_betas(tmp_path: Path) -> None:
-    """The spike measured corr(momentum exposure, Credit beta) = -0.53 on real
-    data; near-collinear B columns make the optimizer build large offsetting
-    positions."""
-    path = _simulate(400, {"A": 0.5, "B": -1.0, "C": 0.2, "D": 0.8})
-    snapshot = _run(
-        FactorRiskModel(["MKT", "A", "B", "C", "D"], market_factor_config(tmp_path)), path
-    )
+def test_risk_adjusted_exposure_is_orthogonal_per_unit_of_risk() -> None:
+    """The overlap with the macro betas is removed in risk-adjusted units
+    (beta / vol), the unit the momentum z-score lives in."""
+    rng = np.random.default_rng(0)
+    vol = rng.uniform(0.001, 0.02, 40)
+    rel = vol / np.median(vol)
+    betas = rng.normal(0, 1, (40, 2)) * rel[:, None]
+    z = 2.0 * betas[:, 0] / rel + rng.normal(0, 0.3, 40)
 
-    assert snapshot.momentum is not None
-    for k in range(snapshot.macro_betas.shape[1]):
-        assert abs(np.corrcoef(snapshot.momentum, snapshot.macro_betas[:, k])[0, 1]) < 0.05
+    x = risk_adjusted_exposure(z, betas, vol)
+
+    assert x is not None
+    assert (x / rel).std() == pytest.approx(1.0)
+    for k in range(betas.shape[1]):
+        assert abs(np.corrcoef(x / rel, betas[:, k] / rel)[0, 1]) < 1e-10
+
+
+def test_risk_adjusted_exposure_ignores_the_overall_vol_level() -> None:
+    rng = np.random.default_rng(1)
+    vol = rng.uniform(0.001, 0.02, 30)
+    betas = rng.normal(0, 1, (30, 2))
+    z = rng.normal(0, 1, 30)
+
+    quiet = risk_adjusted_exposure(z, betas, vol)
+    loud = risk_adjusted_exposure(z, betas, 3.0 * vol)
+
+    assert quiet is not None
+    assert loud is not None
+    np.testing.assert_allclose(quiet, loud)
+
+
+def test_risk_adjusted_exposure_scales_with_relative_vol() -> None:
+    """Two assets with the same risk-adjusted residual: the one with 10x the
+    vol gets 10x the exposure. This is the SHY-vs-SPY unit fix."""
+    vol = np.array([0.001, 0.01, 0.01, 0.01, 0.001, 0.01])
+    rel = vol / np.median(vol)
+    betas = np.zeros((6, 1))
+    betas[:, 0] = np.array([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]) * rel
+    z = np.array([1.0, 0.0, 0.0, 1.0, -1.0, -1.0])
+
+    x = risk_adjusted_exposure(z, betas, vol)
+
+    assert x is not None
+    assert x[0] / x[3] == pytest.approx(0.1)
+    assert x[4] / x[5] == pytest.approx(0.1)
+
+
+def test_risk_adjusted_exposure_returns_none_without_dispersion() -> None:
+    vol = np.array([0.01, 0.02, 0.04])
+    rel = vol / np.median(vol)
+    betas = np.array([[1.0], [2.0], [3.0]]) * rel[:, None]
+    z = np.array([2.0, 4.0, 6.0])  # exactly 2x the risk-adjusted beta
+
+    assert risk_adjusted_exposure(z, betas, vol) is None
+
+
+def _simulate_mixed_vol(n_bars: int, seed: int = 0) -> list[dict[str, float]]:
+    """Three low-vol names (a short-bond-like 0.05% daily noise, tiny market
+    beta) and four high-vol names (1% noise)."""
+    rng = np.random.default_rng(seed)
+    spec = {
+        "L1": (0.02, 0.0005),
+        "L2": (0.02, 0.0005),
+        "L3": (0.02, 0.0005),
+        "H1": (1.0, 0.01),
+        "H2": (0.5, 0.01),
+        "H3": (-0.5, 0.01),
+        "H4": (1.5, 0.01),
+    }
+    closes = {"MKT": 100.0} | dict.fromkeys(spec, 100.0)
+    path = [dict(closes)]
+    for _ in range(n_bars - 1):
+        market = rng.normal(0, 0.01)
+        closes["MKT"] *= math.exp(market)
+        for ticker, (beta, noise) in spec.items():
+            closes[ticker] *= math.exp(beta * market + rng.normal(0, noise))
+        path.append(dict(closes))
+    return path
+
+
+def test_low_vol_assets_do_not_carry_equity_sized_momentum_risk(tmp_path: Path) -> None:
+    """Before the unit fix the low-vol names sat at the cap_common limit,
+    1 / 1.1 = 0.91 of their predicted variance in momentum, on most bars."""
+    tickers = ["MKT", "L1", "L2", "L3", "H1", "H2", "H3", "H4"]
+    model = FactorRiskModel(tickers, market_factor_config(tmp_path))
+    shares = []
+    for closes in _simulate_mixed_vol(400):
+        model.update(closes)
+        snapshot = model.snapshot
+        if not snapshot.ready or MOMENTUM not in snapshot.factors:
+            continue
+        k = snapshot.factors.index(MOMENTUM)
+        share = snapshot.B[:, k] ** 2 * snapshot.F[k, k] / np.diag(snapshot.covariance())
+        shares.append(np.mean([share[snapshot.tickers.index(t)] for t in ("L1", "L2", "L3")]))
+
+    assert len(shares) > 100
+    assert float(np.median(shares)) < 0.5
