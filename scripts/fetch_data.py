@@ -3,7 +3,8 @@
 Usage:
     uv run scripts/fetch_data.py configs/fetch_data.json
 
-Reuses backtester's fetch_to_parquet directly rather than reimplementing it.
+Prices are total-return (split- and dividend-adjusted); see
+``trading_strategies.data``.
 """
 
 from __future__ import annotations
@@ -13,7 +14,8 @@ import sys
 from pathlib import Path
 
 from backtester.config import FetchDataConfig
-from backtester.data.fetch_yfinance import fetch_to_parquet
+
+from trading_strategies.data import fetch_total_return_to_parquet
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +30,7 @@ def main() -> None:
     )
 
     out_path = Path(config.out)
-    fetch_to_parquet(config.tickers, config.start, config.end, out_path)
+    fetch_total_return_to_parquet(config.tickers, config.start, config.end, out_path)
     logger.info("Done — wrote %s", out_path)
 
 
