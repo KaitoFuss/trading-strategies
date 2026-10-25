@@ -90,9 +90,7 @@ class AssetRisk:
 
     @classmethod
     def empty(cls) -> AssetRisk:
-        return cls(
-            pd.DataFrame(), pd.Series(dtype=float), pd.Series(dtype=float), pd.DataFrame()
-        )
+        return cls(pd.DataFrame(), pd.Series(dtype=float), pd.Series(dtype=float), pd.DataFrame())
 
     def is_empty(self) -> bool:
         return self.holding_returns.empty
@@ -105,7 +103,8 @@ class AssetRisk:
         sd = float(total.std()) if len(total) > 1 else 0.0
         if not sd > 0:
             return pd.Series(0.0, index=holdings.columns)
-        return holdings.apply(lambda c: c.cov(total)) / sd * ANNUAL
+        covariance = holdings.apply(lambda c: c.cov(total))
+        return pd.Series(covariance / sd * ANNUAL, index=holdings.columns, dtype=float)
 
 
 class AssetRiskAccumulator:
