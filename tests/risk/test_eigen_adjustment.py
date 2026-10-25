@@ -87,3 +87,10 @@ def test_eigen_adjust_without_bias_is_the_identity() -> None:
 
     np.testing.assert_allclose(eigen_adjust(f, np.ones(4), scale=1.4), f, rtol=1e-10)
     np.testing.assert_allclose(eigen_adjust(f, np.linspace(1.2, 0.9, 4), scale=0.0), f, rtol=1e-10)
+
+
+def test_window_shorter_than_the_factor_count_is_rejected() -> None:
+    """A re-estimate from fewer bars than factors is rank-deficient: its zero
+    eigenvalues would make v and F~ NaN and reach the optimizer silently."""
+    with pytest.raises(ValueError, match="window"):
+        simulated_eigen_bias(np.ones(18), ewm_weights(250, 10), 5, np.random.default_rng(0))

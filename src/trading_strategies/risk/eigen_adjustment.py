@@ -34,6 +34,13 @@ def simulated_eigen_bias(
     where the true covariance is ``diag(eigenvalues)`` -- the bias does not
     depend on the eigenvectors. The re-estimate is the weighted, demeaned
     covariance, like the model's EWM estimator."""
+    if len(weights) <= len(eigenvalues):
+        # The demeaned re-estimate would be rank-deficient: zero eigenvalues,
+        # NaN v, and a NaN F~ that reaches the optimizer silently.
+        raise ValueError(
+            f"eigen_adjustment window ({len(weights)} bars) must exceed the factor count "
+            f"({len(eigenvalues)})"
+        )
     w = weights / weights.sum()
     ratios = np.empty((simulations, len(eigenvalues)))
     sd = np.sqrt(eigenvalues)
