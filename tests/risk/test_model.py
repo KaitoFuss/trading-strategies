@@ -15,6 +15,7 @@ from trading_strategies.risk.model import (
     RiskModelSnapshot,
     cap_common,
     residualize_exposure,
+    risk_adjusted_exposure,
 )
 from trading_strategies.utils.streaming import FloatArray
 
@@ -292,3 +293,59 @@ def test_momentum_exposure_is_orthogonal_to_the_macro_betas(tmp_path: Path) -> N
     assert snapshot.momentum is not None
     for k in range(snapshot.macro_betas.shape[1]):
         assert abs(np.corrcoef(snapshot.momentum, snapshot.macro_betas[:, k])[0, 1]) < 0.05
+
+
+def test_risk_adjusted_exposure_is_orthogonal_per_unit_of_risk() -> None:
+    """The overlap with the macro betas is removed in risk-adjusted units
+    (beta / vol), the unit the momentum z-score lives in."""
+    rng = np.random.default_rng(0)
+    vol = rng.uniform(0.001, 0.02, 40)
+    rel = vol / np.median(vol)
+    betas = rng.normal(0, 1, (40, 2)) * rel[:, None]
+    z = 2.0 * betas[:, 0] / rel + rng.normal(0, 0.3, 40)
+
+    x = risk_adjusted_exposure(z, betas, vol)
+
+    assert x is not None
+    assert (x / rel).std() == pytest.approx(1.0)
+    for k in range(betas.shape[1]):
+        assert abs(np.corrcoef(x / rel, betas[:, k] / rel)[0, 1]) < 1e-10
+
+
+def test_risk_adjusted_exposure_ignores_the_overall_vol_level() -> None:
+    rng = np.random.default_rng(1)
+    vol = rng.uniform(0.001, 0.02, 30)
+    betas = rng.normal(0, 1, (30, 2))
+    z = rng.normal(0, 1, 30)
+
+    quiet = risk_adjusted_exposure(z, betas, vol)
+    loud = risk_adjusted_exposure(z, betas, 3.0 * vol)
+
+    assert quiet is not None
+    assert loud is not None
+    np.testing.assert_allclose(quiet, loud)
+
+
+def test_risk_adjusted_exposure_scales_with_relative_vol() -> None:
+    """Two assets with the same risk-adjusted residual: the one with 10x the
+    vol gets 10x the exposure. This is the SHY-vs-SPY unit fix."""
+    vol = np.array([0.001, 0.01, 0.01, 0.01, 0.001, 0.01])
+    rel = vol / np.median(vol)
+    betas = np.zeros((6, 1))
+    betas[:, 0] = np.array([0.0, 1.0, -1.0, 0.0, 0.0, 0.0]) * rel
+    z = np.array([1.0, 0.0, 0.0, 1.0, -1.0, -1.0])
+
+    x = risk_adjusted_exposure(z, betas, vol)
+
+    assert x is not None
+    assert x[0] / x[3] == pytest.approx(0.1)
+    assert x[4] / x[5] == pytest.approx(0.1)
+
+
+def test_risk_adjusted_exposure_returns_none_without_dispersion() -> None:
+    vol = np.array([0.01, 0.02, 0.04])
+    rel = vol / np.median(vol)
+    betas = np.array([[1.0], [2.0], [3.0]]) * rel[:, None]
+    z = np.array([2.0, 4.0, 6.0])  # exactly 2x the risk-adjusted beta
+
+    assert risk_adjusted_exposure(z, betas, vol) is None

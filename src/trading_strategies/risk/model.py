@@ -158,6 +158,33 @@ def residualize_exposure(exposure: FloatArray, betas: FloatArray) -> FloatArray 
     return residual / std
 
 
+def risk_adjusted_exposure(
+    exposure: FloatArray, betas: FloatArray, vol: FloatArray
+) -> FloatArray | None:
+    """Style exposure in return units, residualized against the macro betas
+    per unit of risk. ``None`` when nothing is left.
+
+    A macro beta is in return units (one factor: ``beta_i = rho_i sigma_i /
+    sigma_f``), so it scales with the asset's vol. The momentum z-score is per
+    unit of risk. Putting z straight into ``B`` gave SHY as much momentum
+    exposure as SPY: 66% of SHY's predicted variance was momentum, and
+    ``cap_common`` then shrank SHY's whole row. So the overlap with the betas
+    is removed in risk-adjusted units (``betas / rel``, intercept included),
+    where low-vol names stay near zero, and the residual is then multiplied by
+    ``rel`` to get back to return units. Scaling first and residualizing in
+    return units does not work: the intercept moves the near-zero low-vol
+    exposures back to ``-mean`` (SHY stayed at 21%).
+
+    ``rel = vol / median(vol)``, so the overall vol level cancels. The plain
+    correlation of the result with ``betas`` is not zero -- that is the shared
+    vol size, not collinearity (cond(B) on real data: 5.8 before, 5.9 after)."""
+    rel = vol / float(np.median(vol))
+    residual = residualize_exposure(exposure, betas / rel[:, None])
+    if residual is None:
+        return None
+    return residual * rel
+
+
 class FactorRiskModel:
     def __init__(self, tickers: Sequence[Ticker], config: FactorModelConfig) -> None:
         self._tickers = tuple(tickers)
