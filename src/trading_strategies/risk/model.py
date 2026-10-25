@@ -6,8 +6,11 @@ time-series betas projected from one long-span EWM covariance ``S``:
 ``F = W'^T S W'``, ``B = S W' F^-1``. Momentum is characteristic-based: the
 exposure is the standardized, vol-scaled 12-1 month return, residualized
 against the macro betas per unit of risk and then put in return units, and the
-factor return is a cross-sectional regression of macro residual returns on it. Idiosyncratic risk
-is floored at ``residual_floor * S_ii``. ``B`` and ``D`` are then rescaled by
+factor return is a cross-sectional regression of macro residual returns on it.
+Idiosyncratic risk is either implied (``S_ii - common``, floored at
+``residual_floor * S_ii``) or, with ``idiosyncratic_risk="residual"``, measured
+as an EWMA of realized residual returns ``r_t - B_{t-1} f_t``, floored at
+``residual_floor * sigma**2``. ``B`` and the implied ``D`` are rescaled by
 ``sigma_short / sqrt(S_ii)``, so short-span vols ride on long-span
 correlations. The factor side carries its own short-span vol: ``F`` is scaled
 by ``g g^T`` and ``B`` divided by ``g`` (``g`` = short-span / long-span factor
@@ -219,6 +222,13 @@ class FactorRiskModel:
         # starts accumulating.
         self._momentum_var = EwmMoments(span=config.corr_span, min_periods=config.vol_span)
         self._momentum_short_var = EwmMoments(span=config.vol_span, min_periods=config.vol_span)
+        # One EWMA of realized residual returns per ticker, eps_t = r_t -
+        # B_{t-1} f_t. Same span as sigma, so D lands in the same short-span
+        # units without a scale**2 step. Updated in both modes (it never feeds
+        # back into B or F); only idiosyncratic_risk="implied" ignores it.
+        self._residual_var = {
+            t: EwmMoments(span=config.vol_span, min_periods=config.vol_span) for t in self._tickers
+        }
         self._last_close: dict[Ticker, float] = {}
         self._snapshot = RiskModelSnapshot.empty()
 
@@ -237,10 +247,37 @@ class FactorRiskModel:
         if momentum_return is not None:
             self._momentum_var.update(momentum_return)
             self._momentum_short_var.update(momentum_return)
+        self._update_idiosyncratic(returns)
         self._vol.update(returns)
         self._corr.update(returns)
         self._momentum.update(live)
         self._snapshot = self._build()
+
+    def _update_idiosyncratic(self, returns: Mapping[Ticker, float]) -> None:
+        """Previous snapshot + this bar's returns: causal, like the momentum
+        factor return. Only tickers with a return on this bar update;
+        ``factor_returns`` treats a missing return as 0, which only nudges
+        ``f`` on that bar."""
+        previous = self._snapshot
+        if not previous.ready:
+            return
+        f = previous.factor_returns(returns)
+        r = np.array([returns.get(t, 0.0) for t in previous.tickers], dtype=np.float64)
+        residual = r - previous.B @ f
+        for k, ticker in enumerate(previous.tickers):
+            if ticker in returns:
+                self._residual_var[ticker].update(float(residual[k]))
+
+    def _measured_idiosyncratic(
+        self, tickers: tuple[Ticker, ...], sigma: FloatArray, implied: FloatArray
+    ) -> FloatArray:
+        """Barra-style: ``D_i = max(residual_floor * sigma_i**2, var(eps_i))``,
+        the same floor as the implied path. A ticker whose residual EWMA is not
+        warm yet (NaN variance) keeps its implied value."""
+        stds = [self._residual_var[t].std for t in tickers]
+        variance = np.array([math.nan if std is None else std * std for std in stds])
+        floored = np.maximum(self._config.residual_floor * sigma**2, variance)
+        return np.where(np.isnan(variance), implied, floored)
 
     def _build(self) -> RiskModelSnapshot:
         corr = self._corr.covariance()
@@ -345,20 +382,27 @@ class FactorRiskModel:
         names: list[str],
         momentum: FloatArray | None,
     ) -> RiskModelSnapshot:
-        """Floors specific risk, rescales ``B``/``F`` from long-span to
-        short-span vol units (short-span vols riding on long-span
-        correlations, see the module docstring), and packages the immutable
-        ``RiskModelSnapshot``."""
+        """Computes D (implied or measured, see ``idiosyncratic_risk``),
+        rescales ``B``/``F`` from long-span to short-span vol units (short-span
+        vols riding on long-span correlations, see the module docstring), and
+        packages the immutable ``RiskModelSnapshot``."""
         s_ii = np.diag(s)
         b, common = cap_common(b, f, s_ii)
         specific = np.maximum(self._config.residual_floor * s_ii, s_ii - common)
         scale = sigma / np.sqrt(s_ii)
+        # Implied D: the explicit "implied" mode, and the fallback for tickers
+        # whose residual EWMA is still cold.
+        implied = specific * scale**2
+        if self._config.idiosyncratic_risk == "implied":
+            idiosyncratic = implied
+        else:
+            idiosyncratic = self._measured_idiosyncratic(tickers, sigma, implied)
         # Sigma = diag(scale) (b f b^T + D) diag(scale), split so that F has
         # short-span factor vols and B stays in real units.
         arrays = [
             b * scale[:, None] / g[None, :],
             f * np.outer(g, g),
-            specific * scale**2,
+            idiosyncratic,
             sigma,
             factor_weights,
             macro_betas,

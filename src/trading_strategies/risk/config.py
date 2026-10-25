@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, get_args
 
 Objective = Literal["linear", "mean_variance"]
-_OBJECTIVES = ("linear", "mean_variance")
+_OBJECTIVES = get_args(Objective)
+IdiosyncraticRisk = Literal["implied", "residual"]
+_IDIOSYNCRATIC_RISKS = get_args(IdiosyncraticRisk)
 
 
 def validate_objective(objective: str, risk_aversion: float | None) -> None:
@@ -35,7 +37,15 @@ class FactorModelConfig:
     corr_span: int = 250
     corr_min_periods: int = 250
     residual_floor: float = 0.10
+    idiosyncratic_risk: IdiosyncraticRisk = "residual"
     momentum: MomentumConfig = field(default_factory=MomentumConfig)
+
+    def __post_init__(self) -> None:
+        if self.idiosyncratic_risk not in _IDIOSYNCRATIC_RISKS:
+            raise ValueError(
+                f"idiosyncratic_risk must be one of {list(_IDIOSYNCRATIC_RISKS)}, "
+                f"got {self.idiosyncratic_risk!r}"
+            )
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Self:
