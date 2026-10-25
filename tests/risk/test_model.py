@@ -173,7 +173,12 @@ def test_exposures_stay_in_real_units_after_a_vol_jump(tmp_path: Path) -> None:
     jump_at = 700
     path = _simulate_vol_jump(1000, jump_at)
     config = market_factor_config(
-        tmp_path, vol_span=60, corr_span=250, corr_min_periods=250, idiosyncratic_risk="implied"
+        tmp_path,
+        vol_span=60,
+        corr_span=250,
+        corr_min_periods=250,
+        idiosyncratic_risk="implied",
+        eigen_adjustment=EigenAdjustmentConfig(enabled=False),
     )
     model = FactorRiskModel(["MKT", "A"], config)
 
@@ -228,7 +233,11 @@ def test_model_variance_never_exceeds_the_floored_total(tmp_path: Path) -> None:
     Σ_ii <= sigma_i^2 * 1.1 for every asset. Before the cap, factor-defining
     assets came out far above that."""
     path = _simulate(400, {"A": 0.5, "B": -1.0, "C": 0.2})
-    config = market_factor_config(tmp_path, idiosyncratic_risk="implied")
+    config = market_factor_config(
+        tmp_path,
+        idiosyncratic_risk="implied",
+        eigen_adjustment=EigenAdjustmentConfig(enabled=False),
+    )
     snapshot = _run(FactorRiskModel(["MKT", "A", "B", "C"], config), path)
 
     total = np.diag(snapshot.covariance())
@@ -477,7 +486,8 @@ def _eigen_config(tmp_path: Path, **fields: int) -> FactorModelConfig:
 def test_eigen_adjustment_changes_only_f(tmp_path: Path) -> None:
     path = _simulate(300, _NOISY)
     tickers = ["MKT", *_NOISY]
-    plain = _run(FactorRiskModel(tickers, market_factor_config(tmp_path)), path)
+    off = market_factor_config(tmp_path, eigen_adjustment=EigenAdjustmentConfig(enabled=False))
+    plain = _run(FactorRiskModel(tickers, off), path)
     adjusted = _run(FactorRiskModel(tickers, _eigen_config(tmp_path)), path)
 
     assert adjusted.factors == plain.factors == ("Market", MOMENTUM)

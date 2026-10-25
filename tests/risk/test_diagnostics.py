@@ -7,6 +7,7 @@ import pytest
 
 from tests.risk.helpers import market_factor_config
 from tests.risk.test_model import _simulate
+from trading_strategies.risk.config import EigenAdjustmentConfig
 from trading_strategies.risk.diagnostics import (
     exposure_collinearity,
     loading_drift,
@@ -110,7 +111,8 @@ def test_residual_share_is_bounded_for_a_model_built_snapshot(tmp_path: Path) ->
     the brief promises: ``share`` is a fraction of variance, so it must stay
     in ``[0, 1]``."""
     tickers = ("MKT", "A", "B")
-    config = market_factor_config(tmp_path)
+    # Unadjusted F: the share is measured against the empirical covariance.
+    config = market_factor_config(tmp_path, eigen_adjustment=EigenAdjustmentConfig(enabled=False))
     path = _simulate(300, {"A": 0.5, "B": -1.0})
     model = FactorRiskModel(tickers, config)
     empirical = EwmCovariance(tickers, span=config.corr_span, min_periods=config.corr_min_periods)

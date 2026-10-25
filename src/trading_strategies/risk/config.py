@@ -35,7 +35,7 @@ class EigenAdjustmentConfig:
     ``window=None`` means ``3 * corr_span``. ``v`` is re-simulated every
     ``refresh_every`` bars and reused in between."""
 
-    enabled: bool = False
+    enabled: bool = True
     scale: float = 1.4
     simulations: int = 200
     window: int | None = None

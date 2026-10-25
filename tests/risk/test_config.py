@@ -113,11 +113,11 @@ def test_shipped_configs_set_idiosyncratic_risk_explicitly(name: str) -> None:
     assert raw["factor_model"]["idiosyncratic_risk"] == "residual"
 
 
-def test_eigen_adjustment_defaults_to_off() -> None:
+def test_eigen_adjustment_defaults_to_on() -> None:
     config = FactorModelConfig.from_dict({"factors_file": "f.json"})
 
     assert config.eigen_adjustment == EigenAdjustmentConfig()
-    assert config.eigen_adjustment.enabled is False
+    assert config.eigen_adjustment.enabled is True
     assert config.eigen_adjustment.scale == 1.4
 
 
@@ -151,3 +151,4 @@ def test_shipped_configs_set_eigen_adjustment_explicitly(name: str) -> None:
     block = json.loads(path.read_text())["factor_model"]["eigen_adjustment"]
 
     assert set(block) == {"enabled", "scale", "simulations", "window", "refresh_every", "seed"}
+    assert block["enabled"] is True
