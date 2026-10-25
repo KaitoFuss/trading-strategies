@@ -77,3 +77,32 @@ def test_optimizer_parses_mean_variance() -> None:
 def test_invalid_mean_variance_settings_are_rejected(raw: dict[str, object], message: str) -> None:
     with pytest.raises(ValueError, match=message):
         OptimizerConfig.from_dict(raw)
+
+
+def test_idiosyncratic_risk_defaults_to_implied() -> None:
+    config = FactorModelConfig.from_dict({"factors_file": "f.json"})
+
+    assert config.idiosyncratic_risk == "implied"
+
+
+def test_idiosyncratic_risk_parses_residual() -> None:
+    config = FactorModelConfig.from_dict(
+        {"factors_file": "f.json", "idiosyncratic_risk": "residual"}
+    )
+
+    assert config.idiosyncratic_risk == "residual"
+
+
+def test_idiosyncratic_risk_rejects_unknown_value() -> None:
+    with pytest.raises(ValueError, match="idiosyncratic_risk"):
+        FactorModelConfig(factors_file="f.json", idiosyncratic_risk="measured")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "name", ["backtest_macd.json", "backtest_macd_rescaled.json", "backtest_optimized.json"]
+)
+def test_shipped_configs_set_idiosyncratic_risk_explicitly(name: str) -> None:
+    path = Path(__file__).resolve().parents[2] / "configs" / name
+    raw = json.loads(path.read_text())
+
+    assert raw["factor_model"]["idiosyncratic_risk"] in ("implied", "residual")
