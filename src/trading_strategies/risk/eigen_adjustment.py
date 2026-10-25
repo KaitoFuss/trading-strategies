@@ -26,14 +26,23 @@ def ewm_weights(span: int, window: int) -> FloatArray:
     return decay ** np.arange(window - 1, -1, -1, dtype=np.float64)
 
 
+def ewm_covariance(x: FloatArray, weights: FloatArray) -> FloatArray:
+    """Weighted, demeaned, bias-corrected covariance of the rows of ``x``
+    (oldest first): the same estimator as ``EwmCovariance`` / pandas
+    ``ewm(adjust=True).cov()``, ``(Sw Sxy - Sx Sy) / (Sw^2 - Sw2)``."""
+    w = weights / weights.sum()
+    centered = x - w @ x
+    return (centered * w[:, None]).T @ centered / (1.0 - float(w @ w))
+
+
 def simulated_eigen_bias(
     eigenvalues: FloatArray, weights: FloatArray, simulations: int, rng: np.random.Generator
 ) -> FloatArray:
     """``v(k) = sqrt(mean_m true_m(k) / estimated_m(k))`` per eigenvalue, in
     the (ascending) order of ``eigenvalues``. Simulated in the eigenbasis,
     where the true covariance is ``diag(eigenvalues)`` -- the bias does not
-    depend on the eigenvectors. The re-estimate is the weighted, demeaned
-    covariance, like the model's EWM estimator."""
+    depend on the eigenvectors. The re-estimate is the model's own EWM
+    estimator (``ewm_covariance``)."""
     if len(weights) <= len(eigenvalues):
         # The demeaned re-estimate would be rank-deficient: zero eigenvalues,
         # NaN v, and a NaN F~ that reaches the optimizer silently.
@@ -41,13 +50,11 @@ def simulated_eigen_bias(
             f"eigen_adjustment window ({len(weights)} bars) must exceed the factor count "
             f"({len(eigenvalues)})"
         )
-    w = weights / weights.sum()
     ratios = np.empty((simulations, len(eigenvalues)))
     sd = np.sqrt(eigenvalues)
     for m in range(simulations):
-        x = rng.standard_normal((len(w), len(eigenvalues))) * sd
-        centered = x - w @ x
-        estimated, vectors = np.linalg.eigh((centered * w[:, None]).T @ centered)
+        x = rng.standard_normal((len(weights), len(eigenvalues))) * sd
+        estimated, vectors = np.linalg.eigh(ewm_covariance(x, weights))
         true = np.einsum("ik,i,ik->k", vectors, eigenvalues, vectors)
         ratios[m] = true / estimated
     return np.sqrt(ratios.mean(axis=0))

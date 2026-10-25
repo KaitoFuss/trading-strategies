@@ -5,9 +5,11 @@ import pytest
 
 from trading_strategies.risk.eigen_adjustment import (
     eigen_adjust,
+    ewm_covariance,
     ewm_weights,
     simulated_eigen_bias,
 )
+from trading_strategies.utils.streaming import EwmCovariance
 
 
 def test_ewm_weights_decay_from_the_newest_bar() -> None:
@@ -94,3 +96,18 @@ def test_window_shorter_than_the_factor_count_is_rejected() -> None:
     eigenvalues would make v and F~ NaN and reach the optimizer silently."""
     with pytest.raises(ValueError, match="window"):
         simulated_eigen_bias(np.ones(18), ewm_weights(250, 10), 5, np.random.default_rng(0))
+
+
+def test_simulation_re_estimates_like_the_model() -> None:
+    """The simulated re-estimate must be the model's own estimator
+    (EwmCovariance: demeaned, bias-corrected); without the bias correction F~
+    came out about 0.55% too high."""
+    rng = np.random.default_rng(3)
+    x = rng.normal(size=(120, 3))
+    streaming = EwmCovariance(["a", "b", "c"], span=40, min_periods=2)
+    for row in x:
+        streaming.update(dict(zip("abc", row.tolist(), strict=True)))
+
+    np.testing.assert_allclose(
+        ewm_covariance(x, ewm_weights(40, 120)), streaming.covariance(), rtol=1e-10
+    )
