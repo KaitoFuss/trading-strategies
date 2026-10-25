@@ -28,7 +28,9 @@ def main() -> None:
     )
 
     out_path = Path(config.out)
-    fetch_to_parquet(config.tickers, config.start, config.end, out_path)
+    fetch_to_parquet(
+        config.tickers, config.start, config.end, out_path, auto_adjust=config.auto_adjust
+    )
     logger.info("Done — wrote %s", out_path)
 
 
