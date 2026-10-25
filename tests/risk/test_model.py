@@ -17,7 +17,7 @@ from trading_strategies.risk.model import (
     residualize_exposure,
     risk_adjusted_exposure,
 )
-from trading_strategies.utils.streaming import FloatArray
+from trading_strategies.utils.streaming import EwmMoments, FloatArray
 
 REPO_FACTORS = Path(__file__).resolve().parents[2] / "configs" / "factors.json"
 
@@ -66,16 +66,6 @@ def test_recovers_known_betas(tmp_path: Path) -> None:
     assert betas["MKT"] == pytest.approx(1.0, abs=0.2)
     assert betas["A"] == pytest.approx(0.5, abs=0.2)
     assert betas["B"] == pytest.approx(-1.0, abs=0.2)
-
-
-def test_covariance_is_psd_and_floor_holds(tmp_path: Path) -> None:
-    path = _simulate(300, {"A": 0.5, "B": -1.0})
-    snapshot = _run(FactorRiskModel(["MKT", "A", "B"], market_factor_config(tmp_path)), path)
-
-    assert np.linalg.eigvalsh(snapshot.covariance()).min() > 0
-    # MKT *is* the Market factor: without the floor its specific risk is ~0.
-    mkt = snapshot.tickers.index("MKT")
-    assert snapshot.D[mkt] >= 0.10 * snapshot.sigma[mkt] ** 2 * 0.99
 
 
 def test_momentum_joins_once_its_variance_is_warm(tmp_path: Path) -> None:
@@ -193,20 +183,6 @@ def test_exposures_stay_in_real_units_after_a_vol_jump(tmp_path: Path) -> None:
             np.testing.assert_allclose(
                 snapshot.covariance(), _unsplit_covariance(model, snapshot), rtol=1e-12
             )
-
-
-def test_bad_closes_do_not_poison_the_snapshot(tmp_path: Path) -> None:
-    path = _simulate(160, {"A": 0.5, "B": -1.0, "C": 0.2})
-    model = FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path))
-    _run(model, path[:150])
-
-    model.update(path[150] | {"A": math.nan, "B": 0.0, "C": -1.0})
-    for closes in path[151:]:
-        model.update(closes)
-        snapshot = model.snapshot
-        assert snapshot.ready
-        for array in (snapshot.B, snapshot.F, snapshot.D):
-            assert np.isfinite(array).all()
 
 
 def test_snapshot_arrays_are_read_only(tmp_path: Path) -> None:
@@ -378,3 +354,111 @@ def test_low_vol_assets_do_not_carry_equity_sized_momentum_risk(tmp_path: Path) 
 
     assert len(shares) > 100
     assert float(np.median(shares)) < 0.5
+
+
+_NOISY = {"A": 0.5, "B": -1.0, "C": 0.2, "D": 0.8, "E": -0.3, "F": 1.2}
+
+
+def _returns(closes: dict[str, float], last: dict[str, float]) -> dict[str, float]:
+    return {t: math.log(c / last[t]) for t, c in closes.items() if t in last}
+
+
+def test_residual_d_is_the_ewma_of_realized_residuals(tmp_path: Path) -> None:
+    """Replays the model: eps_t = r_t - B_{t-1} f_t from the previous
+    snapshot, one EWMA per ticker, only on bars where the ticker has a
+    return. C misses every 7th bar after bar 100."""
+    config = market_factor_config(tmp_path, idiosyncratic_risk="residual")
+    tickers = ["MKT", *_NOISY]
+    model = FactorRiskModel(tickers, config)
+    replay = {t: EwmMoments(span=config.vol_span, min_periods=config.vol_span) for t in tickers}
+    last: dict[str, float] = {}
+    for i, full in enumerate(_simulate(300, _NOISY)):
+        closes = {t: c for t, c in full.items() if not (t == "C" and i > 100 and i % 7 == 0)}
+        previous = model.snapshot
+        returns = _returns(closes, last)
+        if previous.ready:
+            f = previous.factor_returns(returns)
+            r = np.array([returns.get(t, 0.0) for t in previous.tickers])
+            eps = r - previous.B @ f
+            for k, t in enumerate(previous.tickers):
+                if t in returns:
+                    replay[t].update(float(eps[k]))
+        last.update(closes)
+        model.update(closes)
+
+    snapshot = model.snapshot
+    for k, t in enumerate(snapshot.tickers):
+        std = replay[t].std
+        assert std is not None
+        floor = config.residual_floor * snapshot.sigma[k] ** 2
+        assert snapshot.D[k] == pytest.approx(max(floor, std**2), rel=1e-12)
+
+
+def test_residual_d_recovers_the_true_noise_variance(tmp_path: Path) -> None:
+    """Each name has 0.5% daily noise. The momentum regression absorbs about
+    1/N of it across 7 names (F carries that part), so the median lands near
+    0.85 of the true variance; the prototype measured 0.78-0.88 over 5 seeds."""
+    config = market_factor_config(tmp_path, vol_span=100, idiosyncratic_risk="residual")
+    snapshot = _run(FactorRiskModel(["MKT", *_NOISY], config), _simulate(600, _NOISY))
+
+    ratios = [snapshot.D[snapshot.tickers.index(t)] / 0.005**2 for t in _NOISY]
+    assert 0.7 < float(np.median(ratios)) < 1.1
+
+
+def test_late_ticker_uses_the_implied_d_until_warm(tmp_path: Path) -> None:
+    path = _simulate(300, _NOISY)
+    late = [
+        {t: c for t, c in closes.items() if not (t == "F" and i < 150)}
+        for i, closes in enumerate(path)
+    ]
+    tickers = ["MKT", *_NOISY]
+    implied = FactorRiskModel(tickers, market_factor_config(tmp_path))
+    residual = FactorRiskModel(
+        tickers, market_factor_config(tmp_path, idiosyncratic_risk="residual")
+    )
+    joined = False
+    for closes in late:
+        implied.update(closes)
+        residual.update(closes)
+        if "F" in residual.snapshot.tickers:
+            k = residual.snapshot.tickers.index("F")
+            assert residual.snapshot.D[k] == implied.snapshot.D[implied.snapshot.tickers.index("F")]
+            joined = True
+            break
+    assert joined
+
+
+@pytest.mark.parametrize("mode", ["implied", "residual"])
+def test_covariance_is_psd_and_floor_holds(tmp_path: Path, mode: str) -> None:
+    path = _simulate(300, {"A": 0.5, "B": -1.0})
+    config = market_factor_config(tmp_path, idiosyncratic_risk=mode)
+    snapshot = _run(FactorRiskModel(["MKT", "A", "B"], config), path)
+
+    assert np.linalg.eigvalsh(snapshot.covariance()).min() > 0
+    # MKT *is* the Market factor: without the floor its specific risk is ~0.
+    mkt = snapshot.tickers.index("MKT")
+    assert snapshot.D[mkt] >= 0.10 * snapshot.sigma[mkt] ** 2 * 0.99
+
+
+def test_residual_covariance_is_psd_without_a_floor(tmp_path: Path) -> None:
+    config = market_factor_config(tmp_path, residual_floor=0.0, idiosyncratic_risk="residual")
+    snapshot = _run(FactorRiskModel(["MKT", *_NOISY], config), _simulate(300, _NOISY))
+
+    assert np.all(snapshot.D >= 0)
+    assert np.linalg.eigvalsh(snapshot.covariance()).min() > -1e-15
+
+
+@pytest.mark.parametrize("mode", ["implied", "residual"])
+def test_bad_closes_do_not_poison_the_snapshot(tmp_path: Path, mode: str) -> None:
+    path = _simulate(160, {"A": 0.5, "B": -1.0, "C": 0.2})
+    config = market_factor_config(tmp_path, idiosyncratic_risk=mode)
+    model = FactorRiskModel(["MKT", "A", "B", "C"], config)
+    _run(model, path[:150])
+
+    model.update(path[150] | {"A": math.nan, "B": 0.0, "C": -1.0})
+    for closes in path[151:]:
+        model.update(closes)
+        snapshot = model.snapshot
+        assert snapshot.ready
+        for array in (snapshot.B, snapshot.F, snapshot.D):
+            assert np.isfinite(array).all()
