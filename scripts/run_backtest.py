@@ -18,6 +18,7 @@ from trading_strategies.config import MacdBacktestConfig
 from trading_strategies.network_momentum.runner import run_macd_benchmark
 from trading_strategies.portfolio.optimized_portfolio import OptimizedPortfolio
 from trading_strategies.portfolio.report_pages import optimizer_pages
+from trading_strategies.risk.asset_pages import asset_pages
 from trading_strategies.risk.attribution import attribute_backtest
 from trading_strategies.risk.report_pages import FactorDefinitionsPage, attribution_pages
 
@@ -47,7 +48,7 @@ def main() -> None:
         )
         for label, result in results.items():
             logger.info("%s: factor-model bias statistic %.2f", label, result.bias_statistic())
-        extra_pages = attribution_pages(results)
+        extra_pages = [*attribution_pages(results), *asset_pages(results)]
 
     if isinstance(strategy_portfolio, OptimizedPortfolio):
         extra_pages.extend(

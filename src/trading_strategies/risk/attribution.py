@@ -32,7 +32,7 @@ from __future__ import annotations
 import itertools
 import math
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -42,6 +42,11 @@ from backtester.core.events import MarketEvent, Ticker
 from backtester.data.frame_market_data import FrameMarketData
 from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR, PerformanceTracker
 
+from trading_strategies.risk.asset_analytics import (
+    AssetRisk,
+    AssetRiskAccumulator,
+    ModelFitAccumulator,
+)
 from trading_strategies.risk.config import FactorModelConfig
 from trading_strategies.risk.factors import factor_tickers, load_factors
 from trading_strategies.risk.model import MOMENTUM, FactorRiskModel
@@ -71,6 +76,8 @@ class AttributionResult:
     factor_returns: pd.DataFrame  # log, like the model; the edge buckets need these
     simple_factor_returns: pd.DataFrame  # W'(e^r - 1): arithmetic, for factor_regression
     specific_returns: pd.Series[float]  # w'(r - B f)
+    asset_fit: pd.DataFrame = field(default_factory=pd.DataFrame)  # per asset, no weights
+    asset_risk: AssetRisk = field(default_factory=AssetRisk.empty)
 
     def standardized_returns(self) -> pd.Series[float]:
         live = self.predicted_vol > 0
@@ -179,7 +186,10 @@ def run_attribution(
     weights_history: Sequence[tuple[datetime, Mapping[Ticker, float]]],
     equity_history: Sequence[tuple[datetime, float]],
     model: FactorRiskModel,
+    assets: Sequence[Ticker] | None = None,
 ) -> AttributionResult:
+    """``assets`` picks the rows of ``asset_fit`` and ``asset_risk``;
+    ``None`` means the model's own universe."""
     weights_at = dict(weights_history)
     # Log returns, matching FactorRiskModel's own convention (model.py's
     # update()) -- B/F/D/sigma are all fit on log returns, so every return fed
@@ -201,19 +211,23 @@ def run_attribution(
     simple_factor_returns: list[dict[str, float]] = []
     specific: list[float] = []
     last_close: dict[Ticker, float] = {}
+    fit = ModelFitAccumulator()
+    risk = AssetRiskAccumulator()
 
     for event in events:
         closes = {ticker: bar.close for ticker, bar in event.bars.items()}
         snapshot = model.snapshot  # data up to the previous bar
         timestamp = event.timestamp
-        if snapshot.ready and timestamp in weights_at and timestamp in returns_at:
+        if snapshot.ready:
             asset_returns = {
                 t: math.log(c / last_close[t]) for t, c in closes.items() if t in last_close
             }
+            f = snapshot.factor_returns(asset_returns)
+            fit.observe(snapshot, asset_returns, f)  # every ready bar, weights or not
+        if snapshot.ready and timestamp in weights_at and timestamp in returns_at:
             leg_weights = weights_at[timestamp]
             w = np.array([leg_weights.get(t, 0.0) for t in snapshot.tickers], dtype=np.float64)
             x = snapshot.exposures(w)
-            f = snapshot.factor_returns(asset_returns)
             simple_returns = {t: math.expm1(r) for t, r in asset_returns.items()}
             f_simple = snapshot.factor_returns(simple_returns)
             explained = x * f
@@ -233,9 +247,11 @@ def run_attribution(
                 dict(zip(snapshot.factors, f_simple.tolist(), strict=True))
             )
             specific.append(float(w @ np.nan_to_num(r)) - float(explained.sum()))
+            risk.observe(timestamp, snapshot, w, np.nan_to_num(r))
         last_close.update(closes)
         model.update(closes)
 
+    rows = list(model.snapshot.tickers if assets is None else assets)
     dates = pd.DatetimeIndex(index)
     contribution_frame = pd.DataFrame(contributions, index=dates).fillna(0.0)
     if not contribution_frame.empty:
@@ -250,6 +266,8 @@ def run_attribution(
         factor_returns=pd.DataFrame(factor_returns, index=dates).fillna(0.0),
         simple_factor_returns=pd.DataFrame(simple_factor_returns, index=dates).fillna(0.0),
         specific_returns=pd.Series(specific, index=dates, dtype=float),
+        asset_fit=fit.result(rows),
+        asset_risk=risk.result(rows),
     )
 
 
@@ -281,6 +299,7 @@ def attribute_backtest(
             tracker.weights_history,
             tracker.mark_to_market_history,
             FactorRiskModel(universe, model_config),
+            assets=tickers,
         )
         for label, tracker in trackers.items()
     }

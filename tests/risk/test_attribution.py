@@ -265,3 +265,73 @@ def test_factor_regression_uses_arithmetic_factor_returns(tmp_path: Path) -> Non
 
     assert regression.alpha == pytest.approx(0.0, abs=1e-8)
     assert regression.table["beta"]["Market"] == pytest.approx(1.0)
+
+
+def test_asset_fit_covers_bars_without_weights(tmp_path: Path) -> None:
+    events, weights, equity = _scenario()
+
+    def run(weight_rows: list[tuple[datetime, dict[str, float]]]) -> AttributionResult:
+        model = FactorRiskModel(["MKT", "A", "B"], market_factor_config(tmp_path))
+        return run_attribution(events, weight_rows, equity, model)
+
+    full, half = run(weights), run(weights[250:])
+
+    assert len(half.exposures) < len(full.exposures)
+    assert not full.asset_fit.empty
+    pd.testing.assert_frame_equal(half.asset_fit, full.asset_fit)
+
+
+def test_asset_exposure_contributions_sum_to_mean_exposures(tmp_path: Path) -> None:
+    result = _result(tmp_path)
+
+    pd.testing.assert_series_equal(
+        result.asset_risk.exposure_contributions.sum(),
+        result.exposures.mean(),
+        check_names=False,
+        atol=1e-12,
+    )
+
+
+def test_asset_predicted_vol_matches_the_mean_predicted_vol(tmp_path: Path) -> None:
+    result = _result(tmp_path)
+    risk = result.asset_risk
+
+    total = risk.predicted_factor.sum() + risk.predicted_specific.sum()
+
+    annual = math.sqrt(TRADING_DAYS_PER_YEAR)
+    assert total == pytest.approx(result.predicted_vol.mean() * annual)
+    assert len(risk.holding_returns) == len(result.portfolio_returns)
+
+
+def test_assets_argument_selects_rows(tmp_path: Path) -> None:
+    events, weights, equity = _scenario()
+    model = FactorRiskModel(["MKT", "A", "B"], market_factor_config(tmp_path))
+
+    result = run_attribution(events, weights, equity, model, assets=["A", "MKT"])
+
+    assert list(result.asset_fit.index) == ["A", "MKT"]
+    assert list(result.asset_risk.predicted_factor.index) == ["A", "MKT"]
+    assert list(result.asset_risk.exposure_contributions.index) == ["A", "MKT"]
+
+
+def test_a_ticker_that_joins_late_gets_its_own_rows(tmp_path: Path) -> None:
+    events, weights, equity = _scenario()
+    late = [
+        MarketEvent(
+            timestamp=e.timestamp,
+            bars={**e.bars, "C": Bar(close=100.0 * math.exp(0.001 * (i % 7)))}
+            if i >= 300
+            else e.bars,
+        )
+        for i, e in enumerate(events)
+    ]
+    model = FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path))
+
+    result = run_attribution(late, weights, equity, model, assets=["MKT", "A", "B", "C"])
+
+    risk = result.asset_risk
+    assert list(risk.predicted_factor.index) == ["MKT", "A", "B", "C"]
+    assert risk.holding_returns["C"].abs().sum() == 0.0
+    pd.testing.assert_series_equal(
+        risk.exposure_contributions.sum(), result.exposures.mean(), check_names=False, atol=1e-12
+    )
