@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 import numpy as np
+import numpy.typing as npt
 import pandas as pd
 from backtester.core.events import Ticker
 from backtester.tracker.metrics import TRADING_DAYS_PER_YEAR
@@ -109,43 +110,54 @@ class AssetRisk:
 
 class AssetRiskAccumulator:
     """Per bar: ``w_i B_ik`` per factor, the factor and specific parts of
-    ``w_i (Σw)_i / σ``, and ``w_i r_i``. A bar with ``σ = 0`` adds zeros but
-    still counts, so the parts average to the mean predicted vol."""
+    ``w_i (Σw)_i / sigma``, and ``w_i r_i``. A bar with ``sigma = 0`` adds zeros but
+    still counts, so the parts average to the mean predicted vol. The model
+    universe may grow mid-sample; a ticker adds 0 on bars before it joins."""
 
     def __init__(self) -> None:
-        self._tickers: tuple[Ticker, ...] = ()
+        self._slot: dict[Ticker, int] = {}
         self._exposure: dict[str, FloatArray] = {}
         self._factor = np.zeros(0)
         self._specific = np.zeros(0)
         self._timestamps: list[datetime] = []
-        self._holdings: list[FloatArray] = []
+        self._holdings: list[tuple[npt.NDArray[np.intp], FloatArray]] = []
+
+    def _slots(self, tickers: Sequence[Ticker]) -> npt.NDArray[np.intp]:
+        for ticker in tickers:
+            self._slot.setdefault(ticker, len(self._slot))
+        grow = len(self._slot) - len(self._factor)
+        if grow > 0:
+            self._factor = np.append(self._factor, np.zeros(grow))
+            self._specific = np.append(self._specific, np.zeros(grow))
+            for name, column in self._exposure.items():
+                self._exposure[name] = np.append(column, np.zeros(grow))
+        return np.array([self._slot[t] for t in tickers], dtype=np.intp)
 
     def observe(
         self, timestamp: datetime, snapshot: RiskModelSnapshot, w: FloatArray, r: FloatArray
     ) -> None:
-        if not self._timestamps:
-            self._tickers = snapshot.tickers
-            self._factor = np.zeros(len(self._tickers))
-            self._specific = np.zeros(len(self._tickers))
-        assert snapshot.tickers == self._tickers, "the model universe must not change"
+        slots = self._slots(snapshot.tickers)
         for k, name in enumerate(snapshot.factors):
-            column = self._exposure.setdefault(name, np.zeros(len(self._tickers)))
-            column += w * snapshot.B[:, k]
+            column = self._exposure.setdefault(name, np.zeros(len(self._slot)))
+            column[slots] += w * snapshot.B[:, k]
         common = snapshot.B @ (snapshot.F @ (snapshot.B.T @ w))
         specific = snapshot.D * w * w
         sigma = math.sqrt(max(float(w @ common + specific.sum()), 0.0))
         if sigma > 0:
-            self._factor += w * common / sigma
-            self._specific += specific / sigma
+            self._factor[slots] += w * common / sigma
+            self._specific[slots] += specific / sigma
         self._timestamps.append(timestamp)
-        self._holdings.append(w * r)
+        self._holdings.append((slots, w * r))
 
     def result(self, assets: Sequence[Ticker]) -> AssetRisk:
         if not self._timestamps:
             return AssetRisk.empty()
         n = len(self._timestamps)
         rows = list(assets)
-        index = list(self._tickers)
+        index = list(self._slot)
+        holdings = np.zeros((n, len(index)))
+        for t, (slots, values) in enumerate(self._holdings):
+            holdings[t, slots] = values
         exposure = pd.DataFrame(
             {name: column / n for name, column in self._exposure.items()}, index=index
         )
@@ -158,6 +170,6 @@ class AssetRiskAccumulator:
                 rows, fill_value=0.0
             ),
             holding_returns=pd.DataFrame(
-                np.vstack(self._holdings), index=pd.DatetimeIndex(self._timestamps), columns=index
+                holdings, index=pd.DatetimeIndex(self._timestamps), columns=index
             ).reindex(columns=rows, fill_value=0.0),
         )

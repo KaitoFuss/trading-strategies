@@ -312,3 +312,26 @@ def test_assets_argument_selects_rows(tmp_path: Path) -> None:
     assert list(result.asset_fit.index) == ["A", "MKT"]
     assert list(result.asset_risk.predicted_factor.index) == ["A", "MKT"]
     assert list(result.asset_risk.exposure_contributions.index) == ["A", "MKT"]
+
+
+def test_a_ticker_that_joins_late_gets_its_own_rows(tmp_path: Path) -> None:
+    events, weights, equity = _scenario()
+    late = [
+        MarketEvent(
+            timestamp=e.timestamp,
+            bars={**e.bars, "C": Bar(close=100.0 * math.exp(0.001 * (i % 7)))}
+            if i >= 300
+            else e.bars,
+        )
+        for i, e in enumerate(events)
+    ]
+    model = FactorRiskModel(["MKT", "A", "B", "C"], market_factor_config(tmp_path))
+
+    result = run_attribution(late, weights, equity, model, assets=["MKT", "A", "B", "C"])
+
+    risk = result.asset_risk
+    assert list(risk.predicted_factor.index) == ["MKT", "A", "B", "C"]
+    assert risk.holding_returns["C"].abs().sum() == 0.0
+    pd.testing.assert_series_equal(
+        risk.exposure_contributions.sum(), result.exposures.mean(), check_names=False, atol=1e-12
+    )
